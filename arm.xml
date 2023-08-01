@@ -1,0 +1,43 @@
+<mujoco>
+  <option integrator="RK4"/>
+
+  <asset>
+    <texture name="grid" type="2d" builtin="checker" rgb1="0.1 0.2 0.3"
+     rgb2="0.2 0.3 0.4" width="1000" height="1000"/>
+    <material name="grid" texture="grid" texrepeat="8 8" reflectance="0.2"/>
+  </asset>
+
+  <worldbody>
+    <geom size="1.5 1.5 0.01" type="plane" material="grid"/>
+    <light pos="0.8 0 0.4" dir="0 -1 1"/>
+    <light pos="0.4 0 0.2"/>
+    <body name="upper_arm" pos="0 0 0">
+      <joint name="shoulder" type="hinge" axis="0 -1 0"/>
+      <geom name="upper_arm_geom" type="capsule" size=".02" fromto="0 0 0 0.10 0 0" rgba="1 0 1 1" />
+
+      <!--child for forearm and fist-->
+      <body name="forearm" pos="0.10 0 0">
+        <joint name="elbow" type="hinge" axis="0 -1 0"/>
+        <geom name="forearm_geom" type="capsule" size=".02" fromto="0 0 0 0.10 0 0" rgba="1 0 1 1" />
+        <geom name="fist_geom" type="sphere" size=".02" pos="0.10 0 0" rgba="1 0 1 1" />
+      </body>
+    </body>
+
+    <body name="ball" pos="0 0 0">
+      <freejoint/>
+      <geom name="ball_geom" type="sphere" size="0.02" rgba="0 1 1 1"/>
+    </body>
+
+    <body name="target" pos="0.8 0 0.4">
+      <geom name="target_geom" type="sphere" size="0.05" rgba="0.8 0.73 0.47 0.5"/>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <motor name="shoulder_motor" joint="shoulder" gear="1"/>
+  </actuator>
+
+  <actuator>
+    <motor name="elbow_motor" joint="elbow" gear="1"/>
+  </actuator>
+</mujoco>
