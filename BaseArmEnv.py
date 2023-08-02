@@ -2,9 +2,8 @@ import numpy as np
 
 from gymnasium.envs.mujoco import MujocoEnv
 from gymnasium.spaces import Tuple, Box, Discrete
-from numpy.typing import NDArray
 
-XML_FILE = "arm.xml"
+XML_FILE = "./arm.xml"
 
 PURPLE = [1, 0, 1]
 BLUE = [0, 0, 1]
@@ -15,18 +14,18 @@ def rgba(color, alpha = 1):
     return " ".join([str(i) for i in color]) + " " + str(alpha)
 
 class BaseArmEnv(MujocoEnv):
-    metadata = {'render_modes': ["human", "rgb_array"], 'render_fps': 24}
+    metadata = {'render_modes': ["human", "rgb_array", "depth_array"], 'render_fps': 25}
 
-    def __init__(self, frame_skip: int = 1, **kwargs):
-        super().__init__(self, XML_FILE, frame_skip, observation_space = None, **kwargs)
+    def __init__(self, frame_skip: int = 20):
+        MujocoEnv.__init__(self, XML_FILE, frame_skip, observation_space = None, camera_id = 0, render_mode = "human")
 
         # motors on shoulder and elbow joints plus a discrete action for opening and closing fist
-        self.action_space = Tuple((Box(-np.inf, np.inf, shape = self.model.nu), Discrete(2)))
+        self.action_space = Tuple((Box(-np.inf, np.inf, shape = (self.model.nu,)), Discrete(2)))
 
         # hinge joint angular position and velocity for shoulder and elbow plus free joint position and velocity for ball
         # and finally a discrete state for the fist being open or closed
         obs_size = self.model.nv + self.model.nq
-        self.observation_space = Tuple((Box(-np.inf, np.inf, shape = obs_size), Discrete(2)))
+        self.observation_space = Tuple((Box(-np.inf, np.inf, shape = (obs_size,)), Discrete(2)))
 
         self.closed_fist = True
         self.terminated = False
@@ -35,6 +34,7 @@ class BaseArmEnv(MujocoEnv):
         self._change_fist_weight = 1
         # TODO: set camera attributes self.camera_id, self.camera_name
         # TODO: figure out reward range and spec
+        self.render_mode = 'human'
 
     def _get_obs(self):
         return (np.concatenate((self.data.qpos, self.data.qvel)), self.closed_fist)

@@ -6,11 +6,11 @@ ALT_CONTACT_TYPE = 2
 assert ALT_CONTACT_TYPE & 1 == 0, "The alternate contact type must not be compatible with the default type: 1"
 
 class ThrowEnv(BaseArmEnv):
-    def __init__(self, frame_skip: int = 1, **kwargs):
-        super().__init__(frame_skip, **kwargs)
+    def __init__(self):
+        super().__init__()
 
     def reset_model(self):
-        shoulder_angle = np.random.rand(0, np.pi)
+        shoulder_angle = np.random.uniform(0, np.pi)
         elbow_lower_limit = -0.75 * np.pi # 135 degrees on either side for elbow joint
         elbow_upper_limit = 0.75 * np.pi
         # set elbow limits to avoid ground penetration
@@ -33,6 +33,11 @@ class ThrowEnv(BaseArmEnv):
         self.data.qpos = np.concatenate((np.array([shoulder_angle, elbow_angle]), ball_pos, np.zeros(4)))
         self.model.body('target').pos = target_pos
         self.data.qvel = 0
+
+        self.closed_fist = True
+        self.terminated = False
+        print(shoulder_angle, elbow_angle, ball_pos, target_pos)
+        return self._get_obs()
 
     def reward(self, changed_fist):
         pass
