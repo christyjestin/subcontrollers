@@ -35,9 +35,9 @@ class ThrowEnv(BaseArmEnv):
         self.data.qvel = 0
 
         self.closed_fist = True
+        self.ball_in_hand = True
         self.terminated = False
-        print(shoulder_angle, elbow_angle, ball_pos, target_pos)
         return self._get_obs()
 
     def reward(self, changed_fist):
-        pass
+        return 0

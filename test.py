@@ -1,9 +1,10 @@
-import time
 from ThrowEnv import ThrowEnv
+import numpy as np
+import time
 
 
 env = ThrowEnv()
-for _ in range(10):
-    env.reset()
-    time.sleep(1)
+env.reset()
+for _ in range(1000):
+    env.step(env.action_space.sample())
 env.close()
