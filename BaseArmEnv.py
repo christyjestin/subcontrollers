@@ -8,6 +8,15 @@ XML_FILE = "./arm.xml"
 PURPLE = [1, 0, 1]
 BLUE = [0, 0, 1]
 
+DEFAULT_CAMERA_CONFIG = {
+  "azimuth": 90.0,
+  "distance": 4.0,
+  "elevation": -20.0,
+  "lookat": np.array([0.  , 0.  , 1.15]),
+  "trackbodyid": 2
+}
+
+
 def rgba(color, alpha = 1):
     assert len(color) == 3 and all(0 <= i <= 1 for i in color), f"Invalid color: {color}"
     assert 0 <= alpha <= 1, f"Invalid alpha: {alpha}"
@@ -17,7 +26,7 @@ class BaseArmEnv(MujocoEnv):
     metadata = {'render_modes': ["human", "rgb_array", "depth_array"], 'render_fps': 25}
 
     def __init__(self, frame_skip: int = 20):
-        MujocoEnv.__init__(self, XML_FILE, frame_skip, observation_space = None, camera_id = 0, render_mode = "human")
+        MujocoEnv.__init__(self, XML_FILE, frame_skip, observation_space = None, render_mode = "human", default_camera_config=DEFAULT_CAMERA_CONFIG)
 
         # motors on shoulder and elbow joints plus a discrete action for opening and closing fist
         self.action_space = Tuple((Box(-np.inf, np.inf, shape = (self.model.nu,)), Discrete(2)))
@@ -34,7 +43,6 @@ class BaseArmEnv(MujocoEnv):
         self._change_fist_weight = 1
         # TODO: set camera attributes self.camera_id, self.camera_name
         # TODO: figure out reward range and spec
-        self.render_mode = 'human'
 
     def _get_obs(self):
         return (np.concatenate((self.data.qpos, self.data.qvel)), self.closed_fist)
