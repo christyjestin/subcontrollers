@@ -74,10 +74,10 @@ class BaseArmEnv(MujocoEnv):
         fist_pos = self.data.geom('fist_geom').xpos
         ball_pos = self.data.geom('ball_geom').xpos
         dist = np.linalg.norm(fist_pos - ball_pos)
-        combined_radius = self.model.geom('fist_geom').size[0] + self.model.geom('ball_geom').size[0]
-        overlap = dist - combined_radius
-        return overlap > 0.025 # minimum overlap is 0.025
-
+        sum_of_radii = self.model.geom('fist_geom').size[0] + self.model.geom('ball_geom').size[0]
+        # d + o = r1 + r2 -> o = (r1 + r2) - d
+        overlap = sum_of_radii - dist # signed overlap i.e. negative values indicate no collision
+        return overlap > 0.025 # minimum overlap for a catch is 0.025
 
     # returns a boolean indicating whether the fist has changed
     def handle_fist(self, close_fist):
