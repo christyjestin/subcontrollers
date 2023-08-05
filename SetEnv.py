@@ -3,13 +3,13 @@ import mujoco
 
 from BaseArmEnv import BaseArmEnv, IDENTITY_QUAT
 
-class CatchEnv(BaseArmEnv):
+class SetEnv(BaseArmEnv):
     def __init__(self):
         super().__init__()
-        self.hide('target') # target is irrelevant for the catching task
 
     def reset_model(self):
         elbow_angle, shoulder_angle, _ = self.arm_random_init()
+        self.target_pos = self.target_random_init()
         self.launch_point_pos = self.launch_random_init()
         catch_candidate_pos = self.catch_candidate_pos_random_init()
         init_xdot, init_zdot = self.calc_launch_velocity(self.launch_point_pos, catch_candidate_pos)

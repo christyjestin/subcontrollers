@@ -6,13 +6,12 @@ from BaseArmEnv import BaseArmEnv, IDENTITY_QUAT
 class ThrowEnv(BaseArmEnv):
     def __init__(self):
         super().__init__()
+        self.hide('launch_point')
 
     def reset_model(self):
         elbow_angle, shoulder_angle, fist_pos = self.arm_random_init()
         ball_pos = fist_pos # ball starts in hand
-
-        # directly change the model for the fixed body
-        self.model.body('target').pos = self.target_random_init()
+        self.target_pos = self.target_random_init()
         # set and propagate state via data variable (had bugs when I tried modifying model.qpos0 instead)
         self.data.qpos = np.concatenate((np.array([shoulder_angle, elbow_angle]), ball_pos, IDENTITY_QUAT))
         self.data.qvel = 0

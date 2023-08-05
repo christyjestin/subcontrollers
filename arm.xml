@@ -28,7 +28,11 @@
     </body>
 
     <body name="target" pos="0.8 0 0.4">
-      <geom name="target_geom" type="sphere" size="0.05" rgba="0.8 0.73 0.47 0.5" contype="0" conaffinity="0" />
+      <geom name="target_geom" type="sphere" size="0.05" rgba="0.67 0.04 0.11 0.5" mass="0" contype="0" conaffinity="0" />
+    </body>
+
+    <body name="launch_point" pos="0.6 0 0.6">
+      <geom name="launch_point_geom" type="sphere" size="0.05" rgba="0.8 0.73 0.47 0.5" mass="0" contype="0" conaffinity="0" />
     </body>
   </worldbody>
 

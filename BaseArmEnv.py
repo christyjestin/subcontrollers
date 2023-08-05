@@ -1,6 +1,5 @@
 import numpy as np
 
-import gymnasium as gym
 from gymnasium.envs.mujoco import MujocoEnv
 from gymnasium.spaces import Tuple, Box, Discrete
 
@@ -26,9 +25,10 @@ class BaseArmEnv(MujocoEnv):
         self.action_space = Tuple((Box(-1.5, 1.5, shape = (self.model.nu,)), Discrete(2)))
 
         # hinge joint angular position and velocity for shoulder and elbow plus free joint position and velocity for ball
+        # another 6 dimensions for the fixed 3d positions of the launch point and target
         # and finally a discrete state for the fist being open or closed
-        obs_size = self.model.nv + self.model.nq
-        self.observation_space = Tuple((Box(-np.inf, np.inf, shape = (obs_size,)), Discrete(2)))
+        continuous_obs_size = self.model.nv + self.model.nq + 3 + 3
+        self.observation_space = Tuple((Box(-np.inf, np.inf, shape = (continuous_obs_size,)), Discrete(2)))
 
         self.closed_fist = None
         self._ball_in_hand = None
@@ -38,8 +38,13 @@ class BaseArmEnv(MujocoEnv):
         self._change_fist_weight = 1
         # TODO: figure out reward range and spec
 
+        self._launch_point_pos = self.model.body('launch_point').pos
+        self._target_pos = self.model.body('target').pos
+        self.storage_point = np.array([1.2, 0., 0.])
+
     def _get_obs(self):
-        return (np.concatenate((self.data.qpos, self.data.qvel)), self.closed_fist)
+        continuous_obs = np.concatenate((self.data.qpos, self.data.qvel, self.launch_point_pos, self.target_pos))
+        return (continuous_obs, self.closed_fist)
 
     def control_cost(self, control, changed_fist):
         return self._ctrl_cost_weight * np.sum(np.square(control)) + self._change_fist_weight * changed_fist
@@ -57,6 +62,26 @@ class BaseArmEnv(MujocoEnv):
         assert isinstance(val, bool)
         self._ball_in_hand = val
         self.model.eq_active[0] = self._ball_in_hand
+
+    @property # getter and setter to ensure the side effect of repositioning the target
+    def target_pos(self):
+        return self._target_pos
+
+    @target_pos.setter
+    def target_pos(self, val):
+        assert isinstance(val, np.ndarray) and val.shape == (3,)
+        self._target_pos = val
+        self.model.body('target').pos = self._target_pos
+
+    @property # getter and setter to ensure the side effect of repositioning the launch point
+    def launch_point_pos(self):
+        return self._launch_point_pos
+
+    @launch_point_pos.setter
+    def launch_point_pos(self, val):
+        assert isinstance(val, np.ndarray) and val.shape == (3,)
+        self._launch_point_pos = val
+        self.model.body('launch_point').pos = self._launch_point_pos
 
     @property
     def ball_within_reach(self):
@@ -118,6 +143,34 @@ class BaseArmEnv(MujocoEnv):
         target_x = np.random.uniform(0.3, 1)
         target_z = np.random.uniform(0.05, 0.5)
         return np.array([target_x, 0, target_z])
+
+    # we initialize the launch point like the target point because the requirements for the two are the same
+    def launch_random_init(self):
+        return self.target_random_init()
+
+    # choose a candidate position for the arm to make a catch i.e. a position within range for the arm
+    # this position will be used to compute the launch velocity to ensure that the pass is catchable
+    def catch_candidate_pos_random_init(self):
+        r = np.random.uniform(0.12, 0.25)
+        th = np.random.uniform(np.pi / 12, np.pi * 11 / 12) # theta is between 15 and 165 degrees
+        return r * np.array([np.cos(th), 0., np.sin(th)])
+
+    # compute an initial velocity such that the ball will go from launch_pos to catch_candidate_pos
+    def calc_launch_velocity(self, launch_pos, final_pos):
+        assert launch_pos[1] == 0. and final_pos[1] == 0.
+        delta_x, _, delta_z = final_pos - launch_pos
+        assert delta_x < 0, "ball should be moving to the left"
+
+        # first choose the duration of the throw and then back out the launch velocity
+        t = np.random.uniform(0.1, 0.8)
+        v_avg = delta_z / t
+        v0 = v_avg + 0.5 * g * t # v_avg = v0 - 0.5 * g * t -> v0 = v_avg + 0.5 * g * t
+        return delta_x / t, v0
+
+    def hide(self, body_name):
+        assert body_name in ['target', 'launch_point']
+        self.model.body(body_name).pos = self.storage_point
+        self.model.geom(f"{body_name}_geom").rgba = INVISIBLE
 
     def step(self, action):
         bools = [self.ball_in_hand, self.closed_fist, self.terminated]
