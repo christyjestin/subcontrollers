@@ -4,15 +4,9 @@ import gymnasium as gym
 from gymnasium.envs.mujoco import MujocoEnv
 from gymnasium.spaces import Tuple, Box, Discrete
 
+from constants import *
+
 XML_FILE = "./arm.xml"
-
-PURPLE = np.array([1, 0, 1, 1])
-HALF_TRANSPARENT_PURPLE = np.array([1, 0, 1, 0.4])
-TRANSPARENT_PURPLE = np.array([1, 0, 1, 0.25])
-
-CLOSED_FIST_RADIUS = 0.02 # empty closed fist
-BALL_IN_HAND_RADIUS = 0.03 # closed fist with ball in hand
-OPEN_FIST_RADIUS = 0.04
 
 DEFAULT_CAMERA_CONFIG = {
   "azimuth": 90.0,
@@ -94,6 +88,36 @@ class BaseArmEnv(MujocoEnv):
             self.model.geom('fist_geom').size = CLOSED_FIST_RADIUS if self.closed_fist else OPEN_FIST_RADIUS
             self.model.geom('fist_geom').rgba = PURPLE if self.closed_fist else HALF_TRANSPARENT_PURPLE
         return True
+
+    # randomly choose an initial configuration for the arm (has no side effects i.e. state changes)
+    def arm_random_init(self):
+        shoulder_angle = np.random.uniform(0, np.pi)
+        elbow_lower_limit = -0.75 * np.pi # 135 degrees on either side for elbow joint
+        elbow_upper_limit = 0.75 * np.pi
+        # set elbow limits to avoid ground penetration
+        # TODO: N.B. the limits aren't perfect right now because the elbow to fist distance 
+        # is longer than the shoulder to elbow distance
+        # set upper limit if upper arm is to the left and lower limit if upper arm is to the right
+        if shoulder_angle > np.pi / 2:
+            elbow_upper_limit = min(elbow_upper_limit, 2 * np.pi - 2 * shoulder_angle)
+        else:
+            elbow_lower_limit = max(elbow_lower_limit, -2 * shoulder_angle)
+
+        # randomly initialize arm configuration
+        elbow_angle = np.random.uniform(elbow_lower_limit, elbow_upper_limit)
+        total_angle = shoulder_angle + elbow_angle
+        shoulder_pos = np.array([0, 0, 0.02])
+        elbow_pos = shoulder_pos + 0.10 * np.array([np.cos(shoulder_angle), 0, np.sin(shoulder_angle)])
+        # note that upper arm and forearm are same length, but the fist is positioned
+        # at 0.15 i.e. further than the end of the forearm
+        fist_pos = elbow_pos + 0.15 * np.array([np.cos(total_angle), 0, np.sin(total_angle)])
+        return elbow_angle, shoulder_angle, fist_pos
+
+    # randomly choose a position for the target (again has no side effects i.e. state changes)
+    def target_random_init(self):
+        target_x = np.random.uniform(0.3, 1)
+        target_z = np.random.uniform(0.05, 0.5)
+        return np.array([target_x, 0, target_z])
 
     def step(self, action):
         bools = [self.ball_in_hand, self.closed_fist, self.terminated]

@@ -3,6 +3,9 @@ MUJOCO_LOG.TXT
 MJDATA.TXT
 MJMODEL.TXT
 
+# test script
+test.py
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
