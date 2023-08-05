@@ -7,7 +7,8 @@ from gymnasium.spaces import Tuple, Box, Discrete
 XML_FILE = "./arm.xml"
 
 PURPLE = np.array([1, 0, 1, 1])
-BLUE = np.array([0, 0, 1, 1])
+HALF_TRANSPARENT_PURPLE = np.array([1, 0, 1, 0.4])
+TRANSPARENT_PURPLE = np.array([1, 0, 1, 0.25])
 
 CLOSED_FIST_RADIUS = 0.02 # empty closed fist
 BALL_IN_HAND_RADIUS = 0.03 # closed fist with ball in hand
@@ -19,12 +20,6 @@ DEFAULT_CAMERA_CONFIG = {
   "elevation": -15,
   "lookat": np.array([0.  , 0.  , 0.15]),
 }
-
-
-def rgba(color, alpha = 1):
-    assert len(color) == 3 and all(0 <= i <= 1 for i in color), f"Invalid color: {color}"
-    assert 0 <= alpha <= 1, f"Invalid alpha: {alpha}"
-    return " ".join([str(i) for i in color]) + " " + str(alpha)
 
 class BaseArmEnv(MujocoEnv):
     metadata = {'render_modes': ["human", "rgb_array", "depth_array"], 'render_fps': 25}
@@ -92,11 +87,12 @@ class BaseArmEnv(MujocoEnv):
 
         # handle fist appearance
         self.closed_fist = close_fist
-        self.model.geom('fist_geom').rgba = PURPLE if self.closed_fist else BLUE
         if self.ball_in_hand:
             self.model.geom('fist_geom').size = BALL_IN_HAND_RADIUS
+            self.model.geom('fist_geom').rgba = TRANSPARENT_PURPLE
         else:
             self.model.geom('fist_geom').size = CLOSED_FIST_RADIUS if self.closed_fist else OPEN_FIST_RADIUS
+            self.model.geom('fist_geom').rgba = PURPLE if self.closed_fist else HALF_TRANSPARENT_PURPLE
         return True
 
     def step(self, action):

@@ -45,8 +45,7 @@ class ThrowEnv(BaseArmEnv):
         self.data.qvel = 0
         mujoco.mj_kinematics(self.model, self.data)
 
-        self.closed_fist = True
-        self.ball_in_hand = True
+        self.handle_fist(close_fist = True)
         self.terminated = False
         return self._get_obs()
 

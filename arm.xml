@@ -41,6 +41,7 @@
   </actuator>
 
   <equality>
-    <weld name="ball_in_hand" body1="forearm" body2="ball" relpose="0.15 0 0 -1 0 0 0" solimp="0.95 1 0.001 0.1 6" solref="0.005 1" />
+    <weld name="ball_in_hand" body1="forearm" body2="ball" relpose="0.15 0 0 -1 0 0 0" solimp="0.95 1 0.001 0.1 6" 
+          solref="0.005 1" />
   </equality>
 </mujoco>
