@@ -17,6 +17,10 @@ class ThrowEnv(BaseArmEnv):
             self.released = True
             self.closed_fist = False
 
+    # TODO: for now, the termination condition will just be invalid_position; this decision depends on reward design
+    def should_terminate(self):
+        return False
+
     def reset_model(self):
         elbow_angle, shoulder_angle, fist_pos = self.arm_random_init()
         ball_pos = fist_pos # ball starts in hand

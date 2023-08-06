@@ -12,3 +12,8 @@ OPEN_FIST_RADIUS = 0.04
 IDENTITY_QUAT = np.array([1., 0., 0., 0.])
 
 g = 9.81
+
+NUM_MOTORS = 2
+Z_INDEX = 2
+
+PLANE_HALF_SIZE = 1.5

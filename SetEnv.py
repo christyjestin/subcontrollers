@@ -8,11 +8,15 @@ class SetEnv(BaseArmEnv):
         super().__init__()
 
     # grabbing is illegal in the set environment, and this will automatically terminate an episode, 
-    # so it's impossible to let go
+    # so it's impossible to let go in SetEnv
     def handle_fist(self, close_fist):
         self.closed_fist = close_fist
         if self.closed_fist and self.ball_within_reach:
             self.ball_in_hand = True # grabbing the ball
+
+    # terminate immediately on catch since grabbing is illegal in SetEnv
+    def should_terminate(self):
+        return self.ball_in_hand
 
     def reset_model(self):
         elbow_angle, shoulder_angle, _ = self.arm_random_init()

@@ -14,6 +14,10 @@ class CatchEnv(BaseArmEnv):
             self.ball_in_hand = True # grabbing the ball
         self.closed_fist = close_fist
 
+    # terminate immediately on catch
+    def should_terminate(self):
+        return self.ball_in_hand
+
     def reset_model(self):
         elbow_angle, shoulder_angle, _ = self.arm_random_init()
         self.launch_point_pos = self.launch_random_init()

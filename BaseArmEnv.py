@@ -21,6 +21,10 @@ class BaseArmEnv(MujocoEnv):
         MujocoEnv.__init__(self, XML_FILE, frame_skip, observation_space = None, render_mode = "human", 
                            default_camera_config = DEFAULT_CAMERA_CONFIG)
 
+        assert NUM_MOTORS == self.model.nu, f"Please update the constant NUM_MOTORS to {self.model.nu}"
+        assert PLANE_HALF_SIZE == self.model.geom('plane_geom').size[0], \
+            f"Please update the constant PLANE_HALF_SIZE to {self.model.geom('plane_geom').size[0]}"
+
         # motors on shoulder and elbow joints plus a discrete action for opening and closing fist
         self.action_space = Tuple((Box(-1.5, 1.5, shape = (self.model.nu,)), Discrete(2)))
 
@@ -48,12 +52,27 @@ class BaseArmEnv(MujocoEnv):
     def control_cost(self, control, changed_fist):
         return self._ctrl_cost_weight * np.sum(np.square(control)) + self._change_fist_weight * changed_fist
 
-    # reward function and terminate condition are dependent on the environment
+    # reward function is dependent on the environment
     def reward(self, changed_fist):
         raise NotImplementedError
 
-    def should_terminate():
+    # termination condition is also dependent on the environment
+    def should_terminate(self):
         raise NotImplementedError
+
+    # checks whether the z acceleration is 0 since this means the ball is simply rolling on the floor
+    def on_the_floor(self):
+        return np.isclose(self.data.qacc[NUM_MOTORS + Z_INDEX], 0, atol=1e-12)
+
+    # the bounds are defined as the edges of the world plane (z coordinate is irrelevant for this condition)
+    def out_of_bounds(self):
+        xy = self.data.qpos[NUM_MOTORS:NUM_MOTORS + Z_INDEX]
+        return np.any(xy > PLANE_HALF_SIZE) or np.any(xy < -PLANE_HALF_SIZE)
+
+    # in both cases, the position is invalid because the arm won't be able to complete the task
+    # this is a generic termination condition
+    def invalid_position(self):
+        return self.on_the_floor() or self.out_of_bounds()
 
     @property # getter and setter to ensure the side effect of turning the weld constraint on and off
     def ball_in_hand(self):
@@ -180,7 +199,7 @@ class BaseArmEnv(MujocoEnv):
         rewards = self.reward(changed_fist) 
         costs = self.control_cost(control, changed_fist)
         net_reward = rewards - costs
-        terminated = self.should_terminate()
+        terminated = self.should_terminate() or self.invalid_position()
         truncated = False
         info = {'rewards': rewards, 'costs': costs}
 
