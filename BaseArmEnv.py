@@ -32,7 +32,6 @@ class BaseArmEnv(MujocoEnv):
 
         self.closed_fist = None
         self._ball_in_hand = None
-        self.terminated = None
         # TODO: update weights
         self._ctrl_cost_weight = 1
         self._change_fist_weight = 1
@@ -49,8 +48,11 @@ class BaseArmEnv(MujocoEnv):
     def control_cost(self, control, changed_fist):
         return self._ctrl_cost_weight * np.sum(np.square(control)) + self._change_fist_weight * changed_fist
 
+    # reward function and terminate condition are dependent on the environment
     def reward(self, changed_fist):
-        # reward function depends on the task; this function must also set self.terminated
+        raise NotImplementedError
+
+    def should_terminate():
         raise NotImplementedError
 
     @property # getter and setter to ensure the side effect of turning the weld constraint on and off
@@ -93,26 +95,20 @@ class BaseArmEnv(MujocoEnv):
         overlap = sum_of_radii - dist # signed overlap i.e. negative values indicate no collision
         return overlap > 0.025 # minimum overlap for a catch is 0.025
 
-    # returns a boolean indicating whether the fist has changed
+    # logic is dependent on the environment
     def handle_fist(self, close_fist):
-        if self.closed_fist == close_fist: # do nothing if fist already matches desired state
-            return False
+        raise NotImplementedError
 
-        # handle grasping or letting go
-        if close_fist and self.ball_within_reach:
-            self.ball_in_hand = True # grabbing the ball
-        elif (not close_fist) and self.ball_in_hand:
-            self.ball_in_hand = False # letting go off the ball
-
-        # handle fist appearance
-        self.closed_fist = close_fist
+    # handle fist appearance (this function is only updates visuals so it's common to all environments)
+    def handle_fist_appearance(self):
         if self.ball_in_hand:
-            self.model.geom('fist_geom').size = BALL_IN_HAND_RADIUS
-            self.model.geom('fist_geom').rgba = TRANSPARENT_PURPLE
+            size, rgba = BALL_IN_HAND_RADIUS, TRANSPARENT_PURPLE
+        elif self.closed_fist: # empty, closed fist
+            size, rgba = CLOSED_FIST_RADIUS, PURPLE
         else:
-            self.model.geom('fist_geom').size = CLOSED_FIST_RADIUS if self.closed_fist else OPEN_FIST_RADIUS
-            self.model.geom('fist_geom').rgba = PURPLE if self.closed_fist else HALF_TRANSPARENT_PURPLE
-        return True
+            size, rgba = OPEN_FIST_RADIUS, HALF_TRANSPARENT_PURPLE
+        self.model.geom('fist_geom').size = size
+        self.model.geom('fist_geom').rgba = rgba
 
     # randomly choose an initial configuration for the arm (has no side effects i.e. state changes)
     def arm_random_init(self):
@@ -173,15 +169,18 @@ class BaseArmEnv(MujocoEnv):
         self.model.geom(f"{body_name}_geom").rgba = INVISIBLE
 
     def step(self, action):
-        bools = [self.ball_in_hand, self.closed_fist, self.terminated]
-        assert None not in bools, f"Uninitialized variable: ball_in_hand, closed_fist, terminated = {bools}"
-        control, fist_action = action
-        changed_fist = self.handle_fist(close_fist = bool(fist_action))
+        bools = [self.ball_in_hand, self.closed_fist]
+        assert None not in bools, f"Uninitialized variable: ball_in_hand, closed_fist = {bools}"
+        control, close_fist = action
+        changed_fist = (self.closed_fist == close_fist)
+        self.handle_fist(close_fist)
+        self.handle_fist_appearance()
         self.do_simulation(control, self.frame_skip)
 
         rewards = self.reward(changed_fist) 
         costs = self.control_cost(control, changed_fist)
         net_reward = rewards - costs
+        terminated = self.should_terminate()
         truncated = False
         info = {'rewards': rewards, 'costs': costs}
 
@@ -189,4 +188,4 @@ class BaseArmEnv(MujocoEnv):
         if self.render_mode == "human":
             self.render()
 
-        return (observation, net_reward, self.terminated, truncated, info)
+        return (observation, net_reward, terminated, truncated, info)

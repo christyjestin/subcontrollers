@@ -7,6 +7,13 @@ class SetEnv(BaseArmEnv):
     def __init__(self):
         super().__init__()
 
+    # grabbing is illegal in the set environment, and this will automatically terminate an episode, 
+    # so it's impossible to let go
+    def handle_fist(self, close_fist):
+        self.closed_fist = close_fist
+        if self.closed_fist and self.ball_within_reach:
+            self.ball_in_hand = True # grabbing the ball
+
     def reset_model(self):
         elbow_angle, shoulder_angle, _ = self.arm_random_init()
         self.target_pos = self.target_random_init()
@@ -20,9 +27,9 @@ class SetEnv(BaseArmEnv):
         self.data.qvel = np.array([0., 0., init_xdot, 0., init_zdot, 0., 0., 0.])
         mujoco.mj_kinematics(self.model, self.data)
 
-        self.handle_fist(close_fist = False)
+        self.closed_fist = False
         self.ball_in_hand = False
-        self.terminated = False
+        self.handle_fist_appearance()
         return self._get_obs()
 
     def reward(self, changed_fist):

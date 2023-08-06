@@ -8,6 +8,12 @@ class CatchEnv(BaseArmEnv):
         super().__init__()
         self.hide('target') # target is irrelevant for the catching task
 
+    # note the episode terminates immediately after a catch so you can't let go in CatchEnv
+    def handle_fist(self, close_fist):
+        if close_fist and self.ball_within_reach:
+            self.ball_in_hand = True # grabbing the ball
+        self.closed_fist = close_fist
+
     def reset_model(self):
         elbow_angle, shoulder_angle, _ = self.arm_random_init()
         self.launch_point_pos = self.launch_random_init()
@@ -20,9 +26,9 @@ class CatchEnv(BaseArmEnv):
         self.data.qvel = np.array([0., 0., init_xdot, 0., init_zdot, 0., 0., 0.])
         mujoco.mj_kinematics(self.model, self.data)
 
-        self.handle_fist(close_fist = False)
+        self.closed_fist = False
         self.ball_in_hand = False
-        self.terminated = False
+        self.handle_fist_appearance()
         return self._get_obs()
 
     def reward(self, changed_fist):

@@ -7,6 +7,15 @@ class ThrowEnv(BaseArmEnv):
     def __init__(self):
         super().__init__()
         self.hide('launch_point')
+        self.released = False
+
+    def handle_fist(self, close_fist):
+        if self.released: # no action is possible if you've already let go of the ball
+            return
+        if not close_fist: # letting go off the ball
+            self.ball_in_hand = False
+            self.released = True
+            self.closed_fist = False
 
     def reset_model(self):
         elbow_angle, shoulder_angle, fist_pos = self.arm_random_init()
@@ -17,8 +26,10 @@ class ThrowEnv(BaseArmEnv):
         self.data.qvel = 0
         mujoco.mj_kinematics(self.model, self.data)
 
-        self.handle_fist(close_fist = True)
-        self.terminated = False
+        self.closed_fist = True
+        self.ball_in_hand = True
+        self.released = False
+        self.handle_fist_appearance()
         return self._get_obs()
 
     def reward(self, changed_fist):
