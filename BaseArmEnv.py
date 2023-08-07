@@ -62,11 +62,18 @@ class BaseArmEnv(MujocoEnv):
     def should_terminate(self):
         raise NotImplementedError
 
-    # checks whether the z acceleration is 0 since this means the ball is simply rolling on the floor
-    def on_the_floor(self):
-        return np.isclose(self.data.qacc[NUM_MOTORS + Z_INDEX], 0, atol=1e-4)
+    def check_for_collision(self, geom1, geom2):
+        index1 = self.data.geom(geom1).id
+        index2 = self.data.geom(geom2).id
+        contacts = set(zip(self.data.contact.geom1, self.data.contact.geom2))
+        return (index1, index2) in contacts or (index2, index1) in contacts
+
+    @property
+    def ball_hit_the_floor(self):
+        return self.check_for_collision('plane_geom', 'ball_geom')
 
     # the bounds are defined as the edges of the world plane (z coordinate is irrelevant for this condition)
+    @property
     def out_of_bounds(self):
         xy = self.data.qpos[NUM_MOTORS:NUM_MOTORS + Z_INDEX]
         return np.any(xy > PLANE_HALF_SIZE) or np.any(xy < -PLANE_HALF_SIZE)
@@ -74,7 +81,7 @@ class BaseArmEnv(MujocoEnv):
     # in both cases, the position is invalid because the arm won't be able to complete the task
     # this is a generic termination condition
     def invalid_position(self):
-        return self.on_the_floor() or self.out_of_bounds()
+        return self.ball_hit_the_floor or self.out_of_bounds
 
     # computes whether the ball is at the perigee (the point along its trajectory that is closest to the target)
     # should only be called in certain contexts e.g. only after the ball has been released in the throwing task
@@ -147,10 +154,7 @@ class BaseArmEnv(MujocoEnv):
 
     @property
     def ball_and_fist_colliding(self):
-        fist_index = self.data.geom('fist_geom').id
-        ball_index = self.data.geom('ball_geom').id
-        contacts = set(zip(self.data.contact.geom1, self.data.contact.geom2))
-        return (fist_index, ball_index) in contacts or (ball_index, fist_index) in contacts
+        return self.check_for_collision('fist_geom', 'ball_geom')
 
     # logic is dependent on the environment
     def handle_fist(self, close_fist):
