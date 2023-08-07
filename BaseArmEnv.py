@@ -3,6 +3,7 @@ import numpy as np
 from gymnasium.envs.mujoco import MujocoEnv
 from gymnasium.spaces import Tuple, Box, Discrete
 
+from utils import cosine_similarity
 from constants import *
 
 XML_FILE = "./arm.xml"
@@ -53,7 +54,7 @@ class BaseArmEnv(MujocoEnv):
         return self._ctrl_cost_weight * np.sum(np.square(control)) + self._change_fist_weight * changed_fist
 
     # reward function is dependent on the environment
-    def reward(self, changed_fist):
+    def reward(self, close_fist):
         raise NotImplementedError
 
     # termination condition is also dependent on the environment
@@ -62,7 +63,7 @@ class BaseArmEnv(MujocoEnv):
 
     # checks whether the z acceleration is 0 since this means the ball is simply rolling on the floor
     def on_the_floor(self):
-        return np.isclose(self.data.qacc[NUM_MOTORS + Z_INDEX], 0, atol=1e-12)
+        return np.isclose(self.data.qacc[NUM_MOTORS + Z_INDEX], 0, atol=1e-4)
 
     # the bounds are defined as the edges of the world plane (z coordinate is irrelevant for this condition)
     def out_of_bounds(self):
@@ -73,6 +74,24 @@ class BaseArmEnv(MujocoEnv):
     # this is a generic termination condition
     def invalid_position(self):
         return self.on_the_floor() or self.out_of_bounds()
+
+    # computes whether the ball is at the perigee (the point along its trajectory that is closest to the target)
+    # should only be called in certain contexts e.g. only after the ball has been released in the throwing task
+    @property
+    def at_perigee(self):
+        # Cosine Similarity Explanation
+        # We're flipping signs at the perigee: before the perigee, the velocity is pointing toward the target and after the
+        # perigee, it's pointing away from the target; thus the vector that points to the target will be perpendicular
+        # to the velocity at the perigee, and we want the cosine similarity to be 0
+
+        # Tolerance Explanation
+        # The lower the tolerance, the closer we'll push it to 0 before saying we're at the perigee; note that we check
+        # for being less than the tolerance rather than being close to 0 because we might slightly overshoot the perigee
+        # and have a small negative value for cos_sim: if this is the case, then we'll also want to immediately terminate
+        ball_vel = self.data.qvel[NUM_MOTORS : NUM_MOTORS + 3]
+        vec_to_target = self.target_pos - self.ball_pos
+        cos_sim = cosine_similarity(ball_vel, vec_to_target)
+        return cos_sim < PERIGEE_COSINE_SIMILARITY_TOLERANCE
 
     @property # getter and setter to ensure the side effect of turning the weld constraint on and off
     def ball_in_hand(self):
@@ -105,14 +124,39 @@ class BaseArmEnv(MujocoEnv):
         self.model.body('launch_point').pos = self._launch_point_pos
 
     @property
+    def ball_pos(self):
+        return self.data.geom('ball_geom').xpos
+
+    @property
+    def fist_pos(self):
+        return self.data.geom('fist_geom').xpos
+
+    @property
+    def ball_radius(self):
+        return self.model.geom('ball_geom').size[0]
+
+    @property
+    def fist_radius(self):
+        return self.model.geom('fist_geom').size[0]
+
+    @property
+    def ball_to_fist_distance(self):
+        return np.linalg.norm(self.fist_pos - self.ball_pos)
+
+    @property
+    def ball_to_target_distance(self):
+        return np.linalg.norm(self.target_pos - self.ball_pos)
+
+    @property
     def ball_within_reach(self):
-        fist_pos = self.data.geom('fist_geom').xpos
-        ball_pos = self.data.geom('ball_geom').xpos
-        dist = np.linalg.norm(fist_pos - ball_pos)
-        sum_of_radii = self.model.geom('fist_geom').size[0] + self.model.geom('ball_geom').size[0]
+        sum_of_radii = self.fist_radius + self.ball_radius
         # d + o = r1 + r2 -> o = (r1 + r2) - d
-        overlap = sum_of_radii - dist # signed overlap i.e. negative values indicate no collision
+        overlap = sum_of_radii - self.ball_to_fist_distance # signed overlap i.e. negative values indicate no collision
         return overlap > 0.025 # minimum overlap for a catch is 0.025
+
+    @property
+    def fist_colliding(self):
+        return self.ball_to_fist_distance < self.fist_radius
 
     # logic is dependent on the environment
     def handle_fist(self, close_fist):
@@ -192,11 +236,11 @@ class BaseArmEnv(MujocoEnv):
         assert None not in bools, f"Uninitialized variable: ball_in_hand, closed_fist = {bools}"
         control, close_fist = action
         changed_fist = (self.closed_fist == close_fist)
-        self.handle_fist(close_fist)
-        self.handle_fist_appearance()
         self.do_simulation(control, self.frame_skip)
 
-        rewards = self.reward(changed_fist) 
+        self.handle_fist(close_fist)
+        self.handle_fist_appearance()
+        rewards = self.reward(close_fist)
         costs = self.control_cost(control, changed_fist)
         net_reward = rewards - costs
         terminated = self.should_terminate() or self.invalid_position()
@@ -208,3 +252,8 @@ class BaseArmEnv(MujocoEnv):
             self.render()
 
         return (observation, net_reward, terminated, truncated, info)
+
+    # step the simulation without applying control
+    # this function is meant to help visualize a handful of timesteps after the episode terminates
+    def passive_step(self):
+        self.step((np.zeros(NUM_MOTORS), self.closed_fist))

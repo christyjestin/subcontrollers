@@ -1,6 +1,7 @@
 import numpy as np
 import mujoco
 
+from constants import *
 from BaseArmEnv import BaseArmEnv, IDENTITY_QUAT
 
 class CatchEnv(BaseArmEnv):
@@ -35,5 +36,7 @@ class CatchEnv(BaseArmEnv):
         self.handle_fist_appearance()
         return self._get_obs()
 
-    def reward(self, changed_fist):
-        return 0
+    # reward grasp attempts that are closer to the ball
+    # needs to be calibrated such that the small rewards from far away grasps are smaller than the cost of closing the fist
+    def reward(self, close_fist):
+        return (1 / self.ball_to_fist_distance) if close_fist else 0

@@ -17,3 +17,5 @@ NUM_MOTORS = 2
 Z_INDEX = 2
 
 PLANE_HALF_SIZE = 1.5
+
+PERIGEE_COSINE_SIMILARITY_TOLERANCE = 1e-6 # see at_perigee function in BaseArmEnv for explanation

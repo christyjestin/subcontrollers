@@ -1,6 +1,7 @@
 import numpy as np
 import mujoco
 
+from constants import *
 from BaseArmEnv import BaseArmEnv, IDENTITY_QUAT
 
 class ThrowEnv(BaseArmEnv):
@@ -17,9 +18,9 @@ class ThrowEnv(BaseArmEnv):
             self.released = True
             self.closed_fist = False
 
-    # TODO: for now, the termination condition will just be invalid_position; this decision depends on reward design
+    # terminate at the point after the release where the ball is closest to the target
     def should_terminate(self):
-        return False
+        return self.released and self.at_perigee
 
     def reset_model(self):
         elbow_angle, shoulder_angle, fist_pos = self.arm_random_init()
@@ -36,5 +37,6 @@ class ThrowEnv(BaseArmEnv):
         self.handle_fist_appearance()
         return self._get_obs()
 
-    def reward(self, changed_fist):
-        return 0
+    # reward is only received at the perigee (i.e. right before the episode terminates)
+    def reward(self, close_fist):
+        return (1 / self.ball_to_target_distance) if (self.released and self.at_perigee) else 0
