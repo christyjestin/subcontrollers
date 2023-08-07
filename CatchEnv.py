@@ -11,8 +11,7 @@ class CatchEnv(BaseArmEnv):
 
     # note the episode terminates immediately after a catch so you can't let go in CatchEnv
     def handle_fist(self, close_fist):
-        if close_fist and self.ball_within_reach:
-            self.ball_in_hand = True # grabbing the ball
+        self.check_for_grab(close_fist)
         self.closed_fist = close_fist
 
     # terminate immediately on catch

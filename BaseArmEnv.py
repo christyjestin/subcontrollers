@@ -45,6 +45,7 @@ class BaseArmEnv(MujocoEnv):
         self._launch_point_pos = self.model.body('launch_point').pos
         self._target_pos = self.model.body('target').pos
         self.storage_point = np.array([1.2, 0., 0.])
+        self.ball_radius = self.model.geom('ball_geom').size[0]
 
     def _get_obs(self):
         continuous_obs = np.concatenate((self.data.qpos, self.data.qvel, self.launch_point_pos, self.target_pos))
@@ -132,14 +133,6 @@ class BaseArmEnv(MujocoEnv):
         return self.data.geom('fist_geom').xpos
 
     @property
-    def ball_radius(self):
-        return self.model.geom('ball_geom').size[0]
-
-    @property
-    def fist_radius(self):
-        return self.model.geom('fist_geom').size[0]
-
-    @property
     def ball_to_fist_distance(self):
         return np.linalg.norm(self.fist_pos - self.ball_pos)
 
@@ -149,38 +142,43 @@ class BaseArmEnv(MujocoEnv):
 
     @property
     def ball_within_reach(self):
-        sum_of_radii = self.fist_radius + self.ball_radius
-        # d + o = r1 + r2 -> o = (r1 + r2) - d
-        overlap = sum_of_radii - self.ball_to_fist_distance # signed overlap i.e. negative values indicate no collision
-        return overlap > 0.025 # minimum overlap for a catch is 0.025
+        # either in contact with hand or within a small distance
+        return self.ball_and_fist_colliding or (self.ball_to_fist_distance < BALL_IN_HAND_RADIUS + self.ball_radius)
 
     @property
-    def fist_colliding(self):
-        return self.ball_to_fist_distance < self.fist_radius
+    def ball_and_fist_colliding(self):
+        fist_index = self.data.geom('fist_geom').id
+        ball_index = self.data.geom('ball_geom').id
+        contacts = set(zip(self.data.contact.geom1, self.data.contact.geom2))
+        return (fist_index, ball_index) in contacts or (ball_index, fist_index) in contacts
 
     # logic is dependent on the environment
     def handle_fist(self, close_fist):
         raise NotImplementedError
 
+    def check_for_grab(self, close_fist):
+        if (not self.closed_fist and close_fist) and self.ball_within_reach: # trying to grab and within reach
+            self.ball_in_hand = True # grab i.e. turn on weld constraint
+
     # handle fist appearance (this function is only updates visuals so it's common to all environments)
     def handle_fist_appearance(self):
         if self.ball_in_hand:
-            size, rgba = BALL_IN_HAND_RADIUS, TRANSPARENT_PURPLE
+            size, rgba, geom_type = BALL_IN_HAND_RADIUS, TRANSPARENT_PURPLE, SPHERE_GEOM_INDEX
         elif self.closed_fist: # empty, closed fist
-            size, rgba = CLOSED_FIST_RADIUS, PURPLE
+            size, rgba, geom_type = CLOSED_FIST_RADIUS, PURPLE, SPHERE_GEOM_INDEX
         else:
-            size, rgba = OPEN_FIST_RADIUS, HALF_TRANSPARENT_PURPLE
+            size, rgba, geom_type = OPEN_FIST_SIZE, PURPLE, ELLIPSOID_GEOM_INDEX
         self.model.geom('fist_geom').size = size
         self.model.geom('fist_geom').rgba = rgba
+        self.model.geom('fist_geom').type = geom_type
 
     # randomly choose an initial configuration for the arm (has no side effects i.e. state changes)
     def arm_random_init(self):
         shoulder_angle = np.random.uniform(0, np.pi)
         elbow_lower_limit = -0.75 * np.pi # 135 degrees on either side for elbow joint
         elbow_upper_limit = 0.75 * np.pi
-        # set elbow limits to avoid ground penetration
-        # TODO: N.B. the limits aren't perfect right now because the elbow to fist distance 
-        # is longer than the shoulder to elbow distance
+        # set elbow limits to avoid ground penetration (the limits aren't perfect because the elbow to fist distance is
+        # longer than the upper arm length, but the simulator seems to prevent ground penetration in this edge case)
         # set upper limit if upper arm is to the left and lower limit if upper arm is to the right
         if shoulder_angle > np.pi / 2:
             elbow_upper_limit = min(elbow_upper_limit, 2 * np.pi - 2 * shoulder_angle)

@@ -13,16 +13,15 @@ class SetEnv(BaseArmEnv):
     # grabbing is illegal in the set environment, and this will automatically terminate an episode, 
     # so it's impossible to let go in SetEnv
     def handle_fist(self, close_fist):
+        self.check_for_grab(close_fist)
         self.closed_fist = close_fist
-        if self.closed_fist and self.ball_within_reach:
-            self.ball_in_hand = True # grabbing the ball
 
         # figure out when the ball has been set by tracking the collision
         if not self.has_made_contact: # pre contact
-            self.has_made_contact = self.fist_colliding
+            self.has_made_contact = self.ball_and_fist_colliding
         elif not self.set: # mid collision
             # the ball has been set once the fist is no longer in contact
-            self.set = not self.fist_colliding
+            self.set = not self.ball_and_fist_colliding
 
     # terminate immediately on catch since grabbing is illegal in SetEnv
     # otherwise terminate at the point after the set where the ball is closest to the target
