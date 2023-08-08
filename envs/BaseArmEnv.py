@@ -16,6 +16,59 @@ DEFAULT_CAMERA_CONFIG = {
 }
 
 class BaseArmEnv(MujocoEnv):
+    '''
+    This super class contains all logic that is common across tasks: each sub class has its own logic for resetting, 
+    terminating, and changing the fist as well as a tailored reward function.
+
+    ### This Class
+    The primary methods are from the standard `gym.Env` API: `reset()`, `step()`, `render()`, and `close()`. This class
+    has a custom implementation of `step()` that is heavily inspired by `MujocoEnv`'s implementation while all other
+    methods are inherited from `MujocoEnv`. Each subclass also implements the `reset_model()` method which is used in
+    `reset()`. All other logic — transitions, rewards, and terminating — is part of the `step()` function. `BaseArmEnv`
+    also contains a number of helper functions that are useful for interacting with the underlying MuJoCo model, 
+    computing various quantities, and keeping track of state.
+
+    ### The Robot
+    The robot is a 2 link arm with hinge joints in the shoulder and elbow. The arm also has a hand with an abstract
+    actuator that switches between the open palm and closed fist configurations. The robot's movement is entirely within
+    the xz plane, which also bisects the body of the robot. The state of the robot consists of the two joint angles
+    and a discrete binary state for the fist configuration where 1 denotes a closed fist. Similarly the action space
+    of the robot is two continuous control inputs and a boolean input for the fist configuration.
+
+    ### The Environment
+    The environment always contains the robot and the ball and a ground plane. Depending on the task, it will also
+    contain at least one of the target and the launch point. The robot, launch point, and target are all independently
+    randomly initialized while the ball's position is chosen based on the task and the position of the other objects
+    in the environment. The base of the robot is always at the origin.
+
+    ### The Observation Space
+    The observation space consists of a 23 dimensional continuous vector and a single binary variable. The first 9
+    indices denote the position of the system while the next 8 denote the velocity. The final 6 values contain the
+    stationary 3D coordinates of the launch point and target (in that order). Depending on the task, the launch point
+    and target are not always used, but they are always included so that all tasks can share an observation and action
+    space.
+
+    The 9 values for the position of the system consist of 2 joint angles, the ball's 3D position, and a quaternion for
+    the ball's orientation. Similarly, the 8 velocity values hold the velocity of the 2 joint angles and the 6D velocity
+    of the ball. There are no limits for the continuous part of the observation space.
+
+    The lone binary variable denotes the fist configuration: 1 for a closed fist and 0 for an open palm.
+
+    ### The Action Space
+    The action space is a pair of continuous inputs and a single discrete binary input. The continuous inputs are
+    torques for the shoulder and elbow hinge joints while the binary variable opens and closes the fist: 1 closes the
+    fist while 0 opens the fist. Note that the fist does not simply maintain its configuration i.e. a controller must
+    still output a 0 or 1 even if the fist is already in the desired shape. The two control inputs must be in the range
+    [-1.5, 1.5].
+
+    ### The Costs
+    All subclasses share the same costs. There is a quadratic control cost and a fixed cost for changing the fist.
+
+    ### Miscellaneous
+    None of the environments truncate episodes. Instead there is logic to check for unviable positions of the ball, and
+    the episode will terminate if the ball reaches one of these positions.
+    '''
+
     metadata = {'render_modes': ["human", "rgb_array", "depth_array"], 'render_fps': 25}
 
     def __init__(self, frame_skip: int = 20, reward_weight: float = 10):
@@ -57,15 +110,16 @@ class BaseArmEnv(MujocoEnv):
         changed_fist_cost = self._change_fist_weight * changed_fist
         return (ctrl_cost, changed_fist_cost, ctrl_cost + changed_fist_cost)
 
-    # reward function is dependent on the environment
     def reward(self, close_fist):
+        '''Evaluates a reward function that is dependent on the environment'''
         raise NotImplementedError
 
-    # termination condition is also dependent on the environment
     def should_terminate(self):
+        '''Evaluates a termination condition that is dependent on the environment'''
         raise NotImplementedError
 
     def check_for_collision(self, geom1, geom2):
+        '''Checks for contact between the two geometries; both inputs should be the names of the geometries'''
         index1 = self.data.geom(geom1).id
         index2 = self.data.geom(geom2).id
         contacts = set(zip(self.data.contact.geom1, self.data.contact.geom2))
@@ -86,19 +140,23 @@ class BaseArmEnv(MujocoEnv):
     def invalid_position(self):
         return self.ball_hit_the_floor or self.out_of_bounds
 
-    # computes whether the ball is at the perigee (the point along its trajectory that is closest to the target)
-    # should only be called in certain contexts e.g. only after the ball has been released in the throwing task
     @property
     def at_perigee(self):
-        # Cosine Similarity Explanation
-        # We're flipping signs at the perigee: before the perigee, the velocity is pointing toward the target and after the
-        # perigee, it's pointing away from the target; thus the vector that points to the target will be perpendicular
-        # to the velocity at the perigee, and we want the cosine similarity to be 0
+        '''
+        This function computes whether the ball is at the perigee (the point along its trajectory that is closest to the
+        target). It should only be called in certain contexts e.g. only after the ball has been released in the throwing
+        task.
 
-        # Tolerance Explanation
-        # The lower the tolerance, the closer we'll push it to 0 before saying we're at the perigee; note that we check
-        # for being less than the tolerance rather than being close to 0 because we might slightly overshoot the perigee
-        # and have a small negative value for cos_sim: if this is the case, then we'll also want to immediately terminate
+        ### Cosine Similarity Explanation
+        We're flipping signs at the perigee: before the perigee, the velocity is pointing toward the target, and after
+        the perigee, it's pointing away from the target. Thus the vector that points to the target will be perpendicular
+        to the velocity at the perigee, and we want the cosine similarity to be 0.
+
+        ### Tolerance Explanation
+        The lower the tolerance, the closer we'll push it to 0 before saying we're at the perigee. Note that we check
+        for being less than the tolerance rather than being close to 0 because we might slightly overshoot the perigee
+        and have a small negative value for cos_sim. If this is the case, then we'll also want to immediately terminate.
+        '''
         ball_vel = self.data.qvel[NUM_MOTORS : NUM_MOTORS + 3]
         vec_to_target = self.target_pos - self.ball_pos
         cos_sim = cosine_similarity(ball_vel, vec_to_target)
@@ -174,7 +232,7 @@ class BaseArmEnv(MujocoEnv):
         elif self.closed_fist: # empty, closed fist
             size, rgba, geom_type = CLOSED_FIST_RADIUS, PURPLE, SPHERE_GEOM_INDEX
         else:
-            size, rgba, geom_type = OPEN_FIST_SIZE, PURPLE, ELLIPSOID_GEOM_INDEX
+            size, rgba, geom_type = OPEN_PALM_SIZE, PURPLE, ELLIPSOID_GEOM_INDEX
         self.model.geom('fist_geom').size = size
         self.model.geom('fist_geom').rgba = rgba
         self.model.geom('fist_geom').type = geom_type

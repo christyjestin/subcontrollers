@@ -5,6 +5,22 @@ from constants import *
 from BaseArmEnv import BaseArmEnv, IDENTITY_QUAT
 
 class ThrowEnv(BaseArmEnv):
+    '''
+    This environment implements the throwing task. It includes the target but not the launch point. The ball starts in
+    the robot's hand.
+
+    Like in the set task, the robot is rewarded for throw attempts where the ball's trajectory goes near the target. See
+    `SetEnv` for an explanation about how this calculation works.
+
+    The task terminates when the ball reaches the perigee or becomes unviable i.e. hits the ground or goes out of bounds.
+    Note that after the ball is released, a control input that tries to change the fist will have no effect on the
+    robot's fist configuration. This is to prevent the robot from accidentally regrabbing the ball. Letting go of the
+    ball without regrabbing is likely a very difficult behavior to produce with random exploration. If the robot is 
+    choosing actions randomly, then it has probability `0.5 ** n` of not regrabbing where n is the number of timesteps
+    that it must refrain from grabbing. The reasoning behind this design choice is that the robot should learn to not
+    regrab on its own because this action will have no effect on the state despite still having a control cost.
+    '''
+
     def __init__(self):
         super().__init__()
         self.hide('launch_point')

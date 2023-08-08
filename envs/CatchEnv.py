@@ -5,6 +5,19 @@ from constants import *
 from BaseArmEnv import BaseArmEnv, IDENTITY_QUAT
 
 class CatchEnv(BaseArmEnv):
+    '''
+    This environment implements the catching task. It includes the launch point but not the target. The ball starts at
+    the launch point and its initial velocity is chosen such that the resulting pass is within reach for the arm.
+
+    The robot is rewarded for grasp attempts where the fist is close to the ball. It has an additional large bonus for
+    successful grasp attempts i.e. ones that are close enough to result in a catch. This scheme produces a more dense
+    reward but requires some tweaks to reduce exploits (see `BALL_IN_HAND_BONUS` and `reward_weight` for details). The
+    reward function is of the form `bonus + 1 / dist` where the bonus is a fixed constant if the catch is successful
+    and 0 otherwise.
+
+    The task terminates when the ball is caught or when it becomes unviable i.e. hits the ground or goes out of bounds.
+    '''
+
     # because of the large bonus, all successful catches are more or less equal
     # but we still want to use distance in the reward function to make the reward landscape dense
     BALL_IN_HAND_BONUS = 300

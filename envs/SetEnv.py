@@ -5,13 +5,24 @@ from constants import *
 from BaseArmEnv import BaseArmEnv, IDENTITY_QUAT
 
 class SetEnv(BaseArmEnv):
+    '''
+    This environment implements the setting task. It includes both the launch point and the target. The ball starts at
+    the launch point and its initial velocity is chosen such that the resulting pass is within reach for the arm.
+
+    The robot is rewarded for set attempts where the ball's trajectory goes near the target. This is done by determining
+    when the ball reaches the perigee (the point along its trajectory that is closest to the target) and then computing
+    the distance from the ball to the target at this point. The reward is `1 / dist`.
+
+    The task terminates when the ball reaches the perigee, is caught, or becomes unviable i.e. hits the ground or goes
+    out of bounds. Note that catching the ball is illegal in the set task.
+    '''
+
     def __init__(self):
         super().__init__()
         self.has_made_contact = False
         self.set = False
 
-    # grabbing is illegal in the set environment, and this will automatically terminate an episode, 
-    # so it's impossible to let go in SetEnv
+    # grabbing will automatically terminate an episode in the set task, so it's impossible to let go in SetEnv
     def handle_fist(self, close_fist):
         self.check_for_grab(close_fist)
         self.closed_fist = close_fist
@@ -50,7 +61,4 @@ class SetEnv(BaseArmEnv):
 
     # reward is only received at the perigee (i.e. right before the episode terminates)
     def reward(self, close_fist):
-        if self.set and self.at_perigee:
-            return 1 / self.ball_to_target_distance
-        else:
-            return 0
+        return (1 / self.ball_to_target_distance) if (self.set and self.at_perigee) else 0
