@@ -18,7 +18,7 @@ DEFAULT_CAMERA_CONFIG = {
 class BaseArmEnv(MujocoEnv):
     metadata = {'render_modes': ["human", "rgb_array", "depth_array"], 'render_fps': 25}
 
-    def __init__(self, frame_skip: int = 20):
+    def __init__(self, frame_skip: int = 20, reward_weight: float = 10):
         MujocoEnv.__init__(self, XML_FILE, frame_skip, observation_space = None, render_mode = "human", 
                            default_camera_config = DEFAULT_CAMERA_CONFIG)
 
@@ -37,9 +37,10 @@ class BaseArmEnv(MujocoEnv):
 
         self.closed_fist = None
         self._ball_in_hand = None
-        # TODO: update weights
+
         self._ctrl_cost_weight = 1
         self._change_fist_weight = 1
+        self._reward_weight = reward_weight
         # TODO: figure out reward range and spec
 
         self._launch_point_pos = self.model.body('launch_point').pos
@@ -52,7 +53,9 @@ class BaseArmEnv(MujocoEnv):
         return (continuous_obs, self.closed_fist)
 
     def control_cost(self, control, changed_fist):
-        return self._ctrl_cost_weight * np.sum(np.square(control)) + self._change_fist_weight * changed_fist
+        ctrl_cost = self._ctrl_cost_weight * np.sum(np.square(control))
+        changed_fist_cost = self._change_fist_weight * changed_fist
+        return (ctrl_cost, changed_fist_cost, ctrl_cost + changed_fist_cost)
 
     # reward function is dependent on the environment
     def reward(self, close_fist):
@@ -242,12 +245,12 @@ class BaseArmEnv(MujocoEnv):
 
         self.handle_fist(close_fist)
         self.handle_fist_appearance()
-        rewards = self.reward(close_fist)
-        costs = self.control_cost(control, changed_fist)
-        net_reward = rewards - costs
+        rewards = self._reward_weight * self.reward(close_fist)
+        ctrl_cost, changed_fist_cost, total_cost = self.control_cost(control, changed_fist)
+        net_reward = rewards - total_cost
         terminated = self.should_terminate() or self.invalid_position()
         truncated = False
-        info = {'rewards': rewards, 'costs': costs}
+        info = {'rewards': rewards, 'control': ctrl_cost, 'changing_fist': changed_fist_cost, 'total': total_cost}
 
         observation = self._get_obs()
         if self.render_mode == "human":

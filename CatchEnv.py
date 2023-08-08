@@ -5,8 +5,15 @@ from constants import *
 from BaseArmEnv import BaseArmEnv, IDENTITY_QUAT
 
 class CatchEnv(BaseArmEnv):
+    # because of the large bonus, all successful catches are more or less equal
+    # but we still want to use distance in the reward function to make the reward landscape dense
+    BALL_IN_HAND_BONUS = 300
+
     def __init__(self):
-        super().__init__()
+        # lower reward weight to disincentivize model from exploiting dense rewards: the model could try
+        # to exploit the system by frequently making futile catch attempts that still get small distance rewards
+        # hopefully the smaller reward_weight prevents this exploit
+        super().__init__(reward_weight = 0.3)
         self.hide('target') # target is irrelevant for the catching task
 
     # note the episode terminates immediately after a catch so you can't let go in CatchEnv
@@ -36,6 +43,6 @@ class CatchEnv(BaseArmEnv):
         return self._get_obs()
 
     # reward grasp attempts that are closer to the ball
-    # needs to be calibrated such that the small rewards from far away grasps are smaller than the cost of closing the fist
     def reward(self, close_fist):
-        return (1 / self.ball_to_fist_distance) if close_fist else 0
+        bonus = self.BALL_IN_HAND_BONUS * self.ball_in_hand
+        return (bonus + (1 / self.ball_to_fist_distance)) if close_fist else 0
