@@ -27,7 +27,6 @@ LOG_STD_MAX = 2
 LOG_STD_MIN = -20
 
 class SquashedGaussianMLPActor(nn.Module):
-
     def __init__(self, obs_dim, act_dim, hidden_sizes, activation, act_limit):
         super().__init__()
         self.net = mlp([obs_dim] + list(hidden_sizes), activation, activation)
@@ -57,7 +56,7 @@ class SquashedGaussianMLPActor(nn.Module):
             # and look in appendix C. This is a more numerically-stable equivalent to Eq 21.
             # Try deriving it yourself as a (very difficult) exercise. :)
             logp_pi = pi_distribution.log_prob(pi_action).sum(axis = -1)
-            logp_pi -= (2 * (np.log(2) - pi_action - F.softplus(-2 * pi_action))).sum(axis = 1)
+            logp_pi -= 2 * (np.log(2) - pi_action - F.softplus(-2 * pi_action)).sum(axis = 1)
         else:
             logp_pi = None
 
@@ -68,7 +67,6 @@ class SquashedGaussianMLPActor(nn.Module):
 
 
 class MLPQFunction(nn.Module):
-
     def __init__(self, obs_dim, act_dim, hidden_sizes, activation):
         super().__init__()
         self.q = mlp([obs_dim + act_dim] + list(hidden_sizes) + [1], activation)
@@ -77,8 +75,8 @@ class MLPQFunction(nn.Module):
         q = self.q(torch.cat([obs, act], dim = -1))
         return torch.squeeze(q, -1) # Critical to ensure q has right shape.
 
-class MLPActorCritic(nn.Module):
 
+class MLPActorCritic(nn.Module):
     def __init__(self, observation_space, action_space, hidden_sizes = (256, 256), activation = nn.ReLU):
         super().__init__()
 
@@ -91,7 +89,7 @@ class MLPActorCritic(nn.Module):
         self.q1 = MLPQFunction(obs_dim, act_dim, hidden_sizes, activation)
         self.q2 = MLPQFunction(obs_dim, act_dim, hidden_sizes, activation)
 
-    def act(self, obs, deterministic = False):
+    def act(self, observation, deterministic = False):
         with torch.no_grad():
-            a, _ = self.pi(obs, deterministic, False)
-            return a.numpy()
+            action, _ = self.pi(observation, deterministic, False)
+            return action.numpy()
