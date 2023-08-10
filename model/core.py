@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from torch.distributions.normal import Normal
 
 
-def combined_shape(length, shape = None):
+def get_combined_shape(length, shape = None):
     if shape is None:
         return (length,)
     return (length, shape) if np.isscalar(shape) else (length, *shape)
@@ -21,6 +21,9 @@ def mlp(sizes, activation, output_activation = nn.Identity):
 
 def count_vars(module):
     return sum([np.prod(p.shape) for p in module.parameters()])
+
+def get_space_dim():
+    pass
 
 
 LOG_STD_MAX = 2
@@ -89,7 +92,7 @@ class MLPActorCritic(nn.Module):
         self.q1 = MLPQFunction(obs_dim, act_dim, hidden_sizes, activation)
         self.q2 = MLPQFunction(obs_dim, act_dim, hidden_sizes, activation)
 
-    def act(self, observation, deterministic = False):
-        with torch.no_grad():
-            action, _ = self.pi(observation, deterministic, False)
-            return action.numpy()
+    @torch.no_grad()
+    def action(self, observation, deterministic = False):
+        action, _ = self.pi(observation, deterministic, with_logprob = False)
+        return action.numpy()
