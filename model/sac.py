@@ -281,7 +281,8 @@ class SAC:
             episode_length += 1
 
             # Store experience to replay buffer
-            self.replay_buffer.store(observation, action, reward, next_observation, terminated)
+            self.replay_buffer.store(as_vector(observation), as_vector(action), reward, as_vector(next_observation), 
+                                     terminated)
 
             # Super critical, easy to overlook step: make sure to update most recent observation!
             observation = next_observation
