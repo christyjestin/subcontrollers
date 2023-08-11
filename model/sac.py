@@ -7,7 +7,6 @@ import gymnasium as gym
 import time
 
 from core import *
-from logx import EpochLogger
 
 class ReplayBuffer:
     """
@@ -112,8 +111,6 @@ class SAC:
 
         num_test_episodes (int): Number of episodes to test the deterministic policy at the end of each epoch.
 
-        logger_kwargs (dict): Keyword args for EpochLogger.
-
         save_freq (int): How often (in terms of gap between epochs) to save the current policy and value function.
     """
 
@@ -134,8 +131,8 @@ class SAC:
         self.num_test_episodes = num_test_episodes
         self.save_freq = save_freq
 
-        self.logger = EpochLogger(**logger_kwargs)
-        self.logger.save_config(locals())
+        # self.logger = EpochLogger(**logger_kwargs)
+        # self.logger.save_config(locals())
 
         torch.manual_seed(seed)
         np.random.seed(seed)
@@ -160,14 +157,14 @@ class SAC:
 
         # Count variables (protip: try to get a feel for how different size networks behave!)
         var_counts = tuple(count_vars(module) for module in [self.ac.pi, self.ac.q1, self.ac.q2])
-        self.logger.log('\nNumber of parameters: \t pi: %d, \t q1: %d, \t q2: %d\n'%var_counts)
+        # self.logger.log('\nNumber of parameters: \t pi: %d, \t q1: %d, \t q2: %d\n'%var_counts)
 
         # Set up optimizers for policy and q-function
         self.pi_optimizer = Adam(self.ac.pi.parameters(), lr = lr)
         self.q_optimizer = Adam(self.q_params, lr = lr)
 
         # Set up model saving
-        self.logger.setup_pytorch_saver(self.ac)
+        # self.logger.setup_pytorch_saver(self.ac)
 
     # Set up function for computing SAC Q-losses
     def compute_loss_q(self, data):
@@ -219,7 +216,7 @@ class SAC:
         self.q_optimizer.step()
 
         # Record things
-        self.logger.store(LossQ = loss_q.item(), **q_info)
+        # self.logger.store(LossQ = loss_q.item(), **q_info)
 
         # Freeze Q-networks so you don't waste computational effort computing Q gradients during policy learning
         for p in self.q_params:
@@ -236,7 +233,7 @@ class SAC:
             p.requires_grad = True
 
         # Record things
-        self.logger.store(LossPi = loss_pi.item(), **pi_info)
+        # self.logger.store(LossPi = loss_pi.item(), **pi_info)
 
         # Finally, update target networks by polyak averaging.
         with torch.no_grad():
@@ -258,7 +255,7 @@ class SAC:
                 observation, reward, terminated, _ = self.test_env.step(action)
                 episode_return += reward
                 episode_length += 1
-            self.logger.store(TestEpRet = episode_return, TestEpLen = episode_length)
+            # self.logger.store(TestEpRet = episode_return, TestEpLen = episode_length)
 
     def run(self):
         # Prepare for interaction with environment
@@ -289,7 +286,7 @@ class SAC:
 
             # End of trajectory handling
             if terminated:
-                self.logger.store(EpRet = episode_return, EpLen = episode_length)
+                # self.logger.store(EpRet = episode_return, EpLen = episode_length)
                 observation, episode_return, episode_length = self.env.reset(), 0, 0
 
             # Update handling
@@ -302,45 +299,42 @@ class SAC:
             if (t + 1) % self.steps_per_epoch == 0:
                 epoch = (t + 1) // self.steps_per_epoch
 
-                # Save model
-                if (epoch % self.save_freq == 0) or (epoch == self.num_epochs):
-                    self.logger.save_state({'env': self.env}, None)
+                # # Save model
+                # if (epoch % self.save_freq == 0) or (epoch == self.num_epochs):
+                #     self.logger.save_state({'env': self.env}, None)
 
                 # Test the performance of the deterministic version of the agent.
                 self.test_agent()
 
                 # Log info about epoch
-                self.logger.log_tabular('Epoch', epoch)
-                self.logger.log_tabular('EpRet', with_min_and_max = True)
-                self.logger.log_tabular('TestEpRet', with_min_and_max = True)
-                self.logger.log_tabular('EpLen', average_only = True)
-                self.logger.log_tabular('TestEpLen', average_only = True)
-                self.logger.log_tabular('TotalEnvInteracts', t)
-                self.logger.log_tabular('Q1Vals', with_min_and_max = True)
-                self.logger.log_tabular('Q2Vals', with_min_and_max = True)
-                self.logger.log_tabular('LogPi', with_min_and_max = True)
-                self.logger.log_tabular('LossPi', average_only = True)
-                self.logger.log_tabular('LossQ', average_only = True)
-                self.logger.log_tabular('Time', time.time()-start_time)
-                self.logger.dump_tabular()
+                # self.logger.log_tabular('Epoch', epoch)
+                # self.logger.log_tabular('EpRet', with_min_and_max = True)
+                # self.logger.log_tabular('TestEpRet', with_min_and_max = True)
+                # self.logger.log_tabular('EpLen', average_only = True)
+                # self.logger.log_tabular('TestEpLen', average_only = True)
+                # self.logger.log_tabular('TotalEnvInteracts', t)
+                # self.logger.log_tabular('Q1Vals', with_min_and_max = True)
+                # self.logger.log_tabular('Q2Vals', with_min_and_max = True)
+                # self.logger.log_tabular('LogPi', with_min_and_max = True)
+                # self.logger.log_tabular('LossPi', average_only = True)
+                # self.logger.log_tabular('LossQ', average_only = True)
+                # self.logger.log_tabular('Time', time.time() - start_time)
+                # self.logger.dump_tabular()
 
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--env', type = str, default = 'HalfCheetah-v2')
     parser.add_argument('--hid', type = int, default = 256)
-    parser.add_argument('--l', type = int, default = 2)
+    parser.add_argument('--num_layers', type = int, default = 2)
     parser.add_argument('--gamma', type = float, default = 0.99)
     parser.add_argument('--seed', '-s', type = int, default = 0)
     parser.add_argument('--epochs', type = int, default = 50)
     parser.add_argument('--exp_name', type = str, default = 'sac')
     args = parser.parse_args()
 
-    from run_utils import setup_logger_kwargs
-    logger_kwargs = setup_logger_kwargs(args.exp_name, args.seed)
-
     torch.set_num_threads(torch.get_num_threads())
 
     sac = SAC(lambda: gym.make(args.env), actor_critic = MLPActorCritic, gamma = args.gamma, seed = args.seed, 
-                ac_kwargs = {'hidden_sizes': [args.hid] * args.l}, epochs = args.epochs, logger_kwargs = logger_kwargs)
+                ac_kwargs = {'hidden_sizes': [args.hid] * args.num_layers}, epochs = args.epochs)
     sac.run()
