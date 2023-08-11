@@ -3,10 +3,9 @@ import itertools
 import numpy as np
 import torch
 from torch.optim import Adam
-import gymnasium as gym
 import time
 
-from core import *
+from model.core import *
 
 class ReplayBuffer:
     """
@@ -81,7 +80,7 @@ class SAC:
         steps_per_epoch (int): Number of steps of interaction (state-action pairs) for the agent and the 
             environment in each epoch.
 
-        epochs (int): Number of epochs to run and train agent.
+        num_epochs (int): Number of epochs to run and train agent.
 
         replay_size (int): Maximum length of replay buffer.
 
@@ -244,29 +243,34 @@ class SAC:
                 p_targ.data.add_((1 - self.polyak) * p.data)
 
     def get_action(self, observation, deterministic = False):
-        return self.ac.action(torch.as_tensor(observation, dtype = torch.float32), deterministic)
+        return self.ac.action(torch.as_tensor(as_vector(observation), dtype = torch.float32), deterministic)
 
     def test_agent(self):
-        for _ in range(self.num_test_episodes):
-            observation, terminated, episode_return, episode_length = self.test_env.reset(), False, 0, 0
+        for i in range(self.num_test_episodes):
+            print(f'test {i}')
+            (observation, _), terminated, episode_return, episode_length = self.test_env.reset(), False, 0, 0
             while not terminated:
                 # Take deterministic actions at test time
                 action = self.get_action(observation, deterministic = True)
-                observation, reward, terminated, _ = self.test_env.step(action)
+                observation, reward, terminated, _, _ = self.test_env.step(action)
                 episode_return += reward
                 episode_length += 1
+                if episode_length % 100 == 0:
+                    print(episode_length)
             # self.logger.store(TestEpRet = episode_return, TestEpLen = episode_length)
 
     def run(self):
         # Prepare for interaction with environment
         total_steps = self.steps_per_epoch * self.num_epochs
         start_time = time.time()
-        observation, episode_return, episode_length = self.env.reset(), 0, 0
+        (observation, _), episode_return, episode_length = self.env.reset(), 0, 0
 
         # Main loop: collect experience in env and update/log each epoch
         for t in range(total_steps):
             # Until start_steps have elapsed, randomly sample actions from a uniform
             # distribution for better exploration. Afterwards, use the learned policy.
+            if t == self.start_steps:
+                print('started using policy')
             if t > self.start_steps:
                 action = self.get_action(observation)
             else:
@@ -287,10 +291,11 @@ class SAC:
             # End of trajectory handling
             if terminated:
                 # self.logger.store(EpRet = episode_return, EpLen = episode_length)
-                observation, episode_return, episode_length = self.env.reset(), 0, 0
+                (observation, _), episode_return, episode_length = self.env.reset(), 0, 0
 
             # Update handling
             if t >= self.update_after and t % self.update_every == 0:
+                print('backprop')
                 for _ in range(self.update_every):
                     batch = self.replay_buffer.sample_batch(self.batch_size)
                     self.update(data = batch)
@@ -304,7 +309,9 @@ class SAC:
                 #     self.logger.save_state({'env': self.env}, None)
 
                 # Test the performance of the deterministic version of the agent.
+                print('test')
                 self.test_agent()
+                print('test finished')
 
                 # Log info about epoch
                 # self.logger.log_tabular('Epoch', epoch)
@@ -320,21 +327,3 @@ class SAC:
                 # self.logger.log_tabular('LossQ', average_only = True)
                 # self.logger.log_tabular('Time', time.time() - start_time)
                 # self.logger.dump_tabular()
-
-if __name__ == '__main__':
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--env', type = str, default = 'HalfCheetah-v2')
-    parser.add_argument('--hid', type = int, default = 256)
-    parser.add_argument('--num_layers', type = int, default = 2)
-    parser.add_argument('--gamma', type = float, default = 0.99)
-    parser.add_argument('--seed', '-s', type = int, default = 0)
-    parser.add_argument('--epochs', type = int, default = 50)
-    parser.add_argument('--exp_name', type = str, default = 'sac')
-    args = parser.parse_args()
-
-    torch.set_num_threads(torch.get_num_threads())
-
-    sac = SAC(lambda: gym.make(args.env), actor_critic = MLPActorCritic, gamma = args.gamma, seed = args.seed, 
-                ac_kwargs = {'hidden_sizes': [args.hid] * args.num_layers}, epochs = args.epochs)
-    sac.run()

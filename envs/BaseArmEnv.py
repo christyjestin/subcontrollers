@@ -1,12 +1,14 @@
 import numpy as np
+import os
 
 from gymnasium.envs.mujoco import MujocoEnv
 from gymnasium.spaces import Tuple, Box, Discrete
 
-from utils import cosine_similarity
-from constants import *
+from envs.utils import cosine_similarity
+from envs.constants import *
 
-XML_FILE = "./arm.xml"
+
+XML_FILE = os.path.realpath("envs\\arm.xml")
 
 DEFAULT_CAMERA_CONFIG = {
   "azimuth": 90.0,
@@ -71,9 +73,9 @@ class BaseArmEnv(MujocoEnv):
 
     metadata = {'render_modes': ["human", "rgb_array", "depth_array"], 'render_fps': 25}
 
-    def __init__(self, frame_skip: int = 20, reward_weight: float = 10):
+    def __init__(self, frame_skip: int = 20, reward_weight: float = 10, **kwargs):
         MujocoEnv.__init__(self, XML_FILE, frame_skip, observation_space = None, render_mode = "human", 
-                           default_camera_config = DEFAULT_CAMERA_CONFIG)
+                           default_camera_config = DEFAULT_CAMERA_CONFIG, **kwargs)
 
         assert NUM_MOTORS == self.model.nu, f"Please update the constant NUM_MOTORS to {self.model.nu}"
         assert PLANE_HALF_SIZE == self.model.geom('plane_geom').size[0], \

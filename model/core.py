@@ -1,5 +1,4 @@
 import numpy as np
-import scipy.signal
 
 from gymnasium.spaces import Tuple, Box, Discrete
 import torch
@@ -28,36 +27,34 @@ def as_vector(tup):
     return np.concatenate((tup[0], np.array([tup[1]])))
 
 # ensures that the input is a composite Tuple space consisting of a Box 1D continuous and a single Discrete space
-def validate_space(space):
+def validate_space(space, is_obs_space):
     assert isinstance(space, Tuple) and len(space.spaces) == 2, \
         f"The space {space} should include both continuous and discrete components"
     box, discrete = space.spaces
     assert isinstance(box, Box) and len(box.shape) == 1, "The first subspace should be a continuous vector"
-    assert np.all(box.high < np.inf) and np.all(box.low == -box.high), \
-        "The continuous space must be bounded and symmetric around 0"
+    assert is_obs_space or (np.all(box.high < np.inf) and np.all(box.low == -box.high)), \
+        "The continuous action space must be bounded and symmetric around 0"
     assert isinstance(discrete, Discrete) and discrete.n == 2, "The second subspace should be a discrete binary"
     return True
 
 def get_space_dim(space):
-    assert validate_space(space), "The space must be of the form described above in validate_space"
     return space.spaces[0].shape[0] + 1
 
 LOG_STD_MAX = 2
 LOG_STD_MIN = -20
 
 class SquashedGaussianMLPActor(nn.Module):
-    def __init__(self, observation_space, action_space, hidden_sizes, activation):
+    def __init__(self, obs_dim, act_dim, act_limit, hidden_sizes, activation):
         super().__init__()
-        self.net = mlp([get_space_dim(observation_space)] + list(hidden_sizes), activation, activation)
-        action_box = action_space.spaces[0]
-        num_continuous_inputs = action_box.shape[0]
-        self.action_split = [num_continuous_inputs, 1]
+        self.net = mlp([obs_dim] + list(hidden_sizes), activation, activation)
+        continuous_act_dim = act_dim - 1
+        self.action_split = [continuous_act_dim, 1]
 
-        self.mu_layer = nn.Linear(hidden_sizes[-1], num_continuous_inputs)
-        self.log_std_layer = nn.Linear(hidden_sizes[-1], num_continuous_inputs)
+        self.mu_layer = nn.Linear(hidden_sizes[-1], continuous_act_dim)
+        self.log_std_layer = nn.Linear(hidden_sizes[-1], continuous_act_dim)
         self.logit_layer = nn.Linear(hidden_sizes[-1], 1)
         self.sigmoid = nn.Sigmoid()
-        self.act_limit = action_box.high
+        self.act_limit = torch.tensor(act_limit)
 
     def forward(self, obs, deterministic = False, with_logprob = True):
         net_out = self.net(obs)
@@ -84,12 +81,11 @@ class SquashedGaussianMLPActor(nn.Module):
             # Try deriving it yourself as a (very difficult) exercise. :)
             logp_pi = continuous_dist.log_prob(continuous_action).sum(axis = -1)
             logp_pi -= 2 * (np.log(2) - continuous_action - F.softplus(-2 * continuous_action)).sum(axis = 1)
-            logp_pi += discrete_action * torch.log(p) + (1 - discrete_action) * torch.log(1 - p)
+            logp_pi += torch.squeeze(discrete_action * torch.log(p) + (1 - discrete_action) * torch.log(1 - p), dim = -1)
         else:
             logp_pi = None
-
         continuous_action = self.act_limit * torch.tanh(continuous_action)
-        return torch.cat((continuous_action, discrete_action)), logp_pi
+        return torch.cat((continuous_action, discrete_action), dim = -1), logp_pi
 
 
 class MLPQFunction(nn.Module):
@@ -105,10 +101,16 @@ class MLPQFunction(nn.Module):
 class MLPActorCritic(nn.Module):
     def __init__(self, observation_space, action_space, hidden_sizes = (256, 256), activation = nn.ReLU):
         super().__init__()
+        validate_space(observation_space, is_obs_space = True)
+        validate_space(action_space, is_obs_space = False)
+
         # build policy and value functions
-        self.pi = SquashedGaussianMLPActor(observation_space, action_space, hidden_sizes, activation)
-        self.q1 = MLPQFunction(observation_space, action_space, hidden_sizes, activation)
-        self.q2 = MLPQFunction(observation_space, action_space, hidden_sizes, activation)
+        obs_dim = get_space_dim(observation_space)
+        act_dim = get_space_dim(action_space)
+        act_limit = action_space[0].high
+        self.pi = SquashedGaussianMLPActor(obs_dim, act_dim, act_limit, hidden_sizes, activation)
+        self.q1 = MLPQFunction(obs_dim, act_dim, hidden_sizes, activation)
+        self.q2 = MLPQFunction(obs_dim, act_dim, hidden_sizes, activation)
 
     @torch.no_grad()
     def action(self, observation, deterministic = False):

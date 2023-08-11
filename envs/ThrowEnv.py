@@ -1,8 +1,8 @@
 import numpy as np
 import mujoco
 
-from constants import *
-from BaseArmEnv import BaseArmEnv, IDENTITY_QUAT
+from envs.constants import *
+from envs.BaseArmEnv import BaseArmEnv, IDENTITY_QUAT
 
 class ThrowEnv(BaseArmEnv):
     '''
