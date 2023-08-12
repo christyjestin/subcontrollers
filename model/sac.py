@@ -115,8 +115,8 @@ class SAC:
     """
 
     def __init__(self, env_fn, exp_name, actor_critic = MLPActorCritic, ac_kwargs = dict(), seed = 0, 
-                 steps_per_epoch = 1000, num_epochs = 100, replay_size = int(1e6), gamma = 0.99, polyak = 0.995, 
-                 lr = 1e-3, alpha = 0.2, batch_size = 100, start_steps = 2000, update_after = 1000, 
+                 steps_per_epoch = 4000, num_epochs = 100, replay_size = int(1e6), gamma = 0.99, polyak = 0.995, 
+                 lr = 1e-3, alpha = 0.2, batch_size = 100, start_steps = 10000, update_after = 1000, 
                  update_every = 50, num_test_episodes = 10, save_freq = 1):
 
         self.steps_per_epoch = steps_per_epoch
