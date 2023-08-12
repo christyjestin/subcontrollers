@@ -57,6 +57,7 @@ class SetEnv(BaseArmEnv):
         self.set = False
         self.has_made_contact = False
         self.handle_fist_appearance()
+        self.previous_obs = None
         return self._get_obs()
 
     # reward is only received at the perigee (i.e. right before the episode terminates)

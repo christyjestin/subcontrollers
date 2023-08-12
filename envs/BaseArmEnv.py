@@ -103,6 +103,8 @@ class BaseArmEnv(MujocoEnv):
         self.storage_point = np.array([1.2, 0., 0.])
         self.ball_radius = self.model.geom('ball_geom').size[0]
 
+        self.previous_obs = None
+
     def _get_obs(self):
         continuous_obs = np.concatenate((self.data.qpos, self.data.qvel, self.launch_point_pos, self.target_pos))
         return (continuous_obs, self.closed_fist)
@@ -119,6 +121,11 @@ class BaseArmEnv(MujocoEnv):
     def should_terminate(self):
         '''Evaluates a termination condition that is dependent on the environment'''
         raise NotImplementedError
+
+    def stuck(self, obs):
+        stuck = self.previous_obs and np.allclose(obs[0], self.previous_obs[0]) and (obs[1] == self.previous_obs[1])
+        self.previous_obs = obs
+        return stuck
 
     def check_for_collision(self, geom1, geom2):
         '''Checks for contact between the two geometries; both inputs should be the names of the geometries'''
@@ -305,14 +312,14 @@ class BaseArmEnv(MujocoEnv):
 
         self.handle_fist(close_fist)
         self.handle_fist_appearance()
+        observation = self._get_obs()
         rewards = self._reward_weight * self.reward(close_fist)
         ctrl_cost, changed_fist_cost, total_cost = self.control_cost(control, changed_fist)
         net_reward = rewards - total_cost
-        terminated = self.should_terminate() or self.invalid_position()
+        terminated = self.should_terminate() or self.invalid_position() or self.stuck(observation)
         truncated = False
         info = {'rewards': rewards, 'control': ctrl_cost, 'changing_fist': changed_fist_cost, 'total': total_cost}
 
-        observation = self._get_obs()
         if self.render_mode == "human":
             self.render()
 
