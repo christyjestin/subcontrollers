@@ -39,7 +39,7 @@ def main(env_type, model_path, hidden_sizes, deterministic):
             for _ in range(5):
                 env.passive_step()
             episode_length, total_reward = 0, 0
-            env.reset()
+            observation, _ = env.reset()
     env.close()
 
 if __name__ == '__main__':
