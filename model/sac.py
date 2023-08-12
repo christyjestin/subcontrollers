@@ -255,8 +255,6 @@ class SAC:
                 observation, reward, terminated, _, _ = self.test_env.step(action)
                 episode_return += reward
                 episode_length += 1
-                if episode_length % 100 == 0:
-                    print(episode_length)
             # self.logger.store(TestEpRet = episode_return, TestEpLen = episode_length)
 
     def run(self):
@@ -309,9 +307,7 @@ class SAC:
                 #     self.logger.save_state({'env': self.env}, None)
 
                 # Test the performance of the deterministic version of the agent.
-                print('test')
                 self.test_agent()
-                print('test finished')
 
                 # Log info about epoch
                 # self.logger.log_tabular('Epoch', epoch)

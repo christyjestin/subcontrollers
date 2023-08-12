@@ -73,9 +73,9 @@ class BaseArmEnv(MujocoEnv):
 
     metadata = {'render_modes': ["human", "rgb_array", "depth_array"], 'render_fps': 25}
 
-    def __init__(self, frame_skip: int = 20, reward_weight: float = 10, **kwargs):
-        MujocoEnv.__init__(self, XML_FILE, frame_skip, observation_space = None, render_mode = "human", 
-                           default_camera_config = DEFAULT_CAMERA_CONFIG, **kwargs)
+    def __init__(self, frame_skip: int = 20, reward_weight: float = 10, render_mode = None):
+        MujocoEnv.__init__(self, XML_FILE, frame_skip, observation_space = None, render_mode = render_mode, 
+                           default_camera_config = DEFAULT_CAMERA_CONFIG)
 
         assert NUM_MOTORS == self.model.nu, f"Please update the constant NUM_MOTORS to {self.model.nu}"
         assert PLANE_HALF_SIZE == self.model.geom('plane_geom').size[0], \

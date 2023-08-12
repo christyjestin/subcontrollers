@@ -22,11 +22,11 @@ class CatchEnv(BaseArmEnv):
     # but we still want to use distance in the reward function to make the reward landscape dense
     BALL_IN_HAND_BONUS = 300
 
-    def __init__(self):
+    def __init__(self, render_mode = None):
         # lower reward weight to disincentivize model from exploiting dense rewards: the model could try
         # to exploit the system by frequently making futile catch attempts that still get small distance rewards
         # hopefully the smaller reward_weight prevents this exploit
-        super().__init__(reward_weight = 0.3)
+        super().__init__(reward_weight = 0.3, render_mode = render_mode)
         self.hide('target') # target is irrelevant for the catching task
 
     # note the episode terminates immediately after a catch so you can't let go in CatchEnv

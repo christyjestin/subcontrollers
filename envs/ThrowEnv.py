@@ -21,8 +21,8 @@ class ThrowEnv(BaseArmEnv):
     regrab on its own because this action will have no effect on the state despite still having a control cost.
     '''
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, render_mode = None):
+        super().__init__(render_mode = render_mode)
         self.hide('launch_point')
         self.released = False
 

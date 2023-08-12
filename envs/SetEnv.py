@@ -17,8 +17,8 @@ class SetEnv(BaseArmEnv):
     out of bounds. Note that catching the ball is illegal in the set task.
     '''
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, render_mode = None):
+        super().__init__(render_mode = render_mode)
         self.has_made_contact = False
         self.set = False
 
