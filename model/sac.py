@@ -4,6 +4,7 @@ import numpy as np
 import torch
 from torch.optim import Adam
 import time
+import wandb
 
 from model.core import *
 
@@ -113,10 +114,10 @@ class SAC:
         save_freq (int): How often (in terms of gap between epochs) to save the current policy and value function.
     """
 
-    def __init__(self, env_fn, actor_critic = MLPActorCritic, ac_kwargs = dict(), seed = 0, 
-                 steps_per_epoch = 4000, num_epochs = 100, replay_size = int(1e6), gamma = 0.99, polyak = 0.995, 
-                 lr = 1e-3, alpha = 0.2, batch_size = 100, start_steps = 10000, update_after = 1000, 
-                 update_every = 50, num_test_episodes = 10, logger_kwargs = dict(), save_freq = 1):
+    def __init__(self, env_fn, exp_name, actor_critic = MLPActorCritic, ac_kwargs = dict(), seed = 0, 
+                 steps_per_epoch = 1000, num_epochs = 100, replay_size = int(1e6), gamma = 0.99, polyak = 0.995, 
+                 lr = 1e-3, alpha = 0.2, batch_size = 100, start_steps = 2000, update_after = 1000, 
+                 update_every = 50, num_test_episodes = 10, save_freq = 1):
 
         self.steps_per_epoch = steps_per_epoch
         self.num_epochs = num_epochs
@@ -130,8 +131,7 @@ class SAC:
         self.num_test_episodes = num_test_episodes
         self.save_freq = save_freq
 
-        # self.logger = EpochLogger(**logger_kwargs)
-        # self.logger.save_config(locals())
+        self.logger = wandb.init(project = "subcontrollers", name = exp_name, config = locals())
 
         torch.manual_seed(seed)
         np.random.seed(seed)
@@ -155,15 +155,13 @@ class SAC:
         self.replay_buffer = ReplayBuffer(obs_dim = obs_dim, act_dim = act_dim, size = replay_size)
 
         # Count variables (protip: try to get a feel for how different size networks behave!)
-        var_counts = tuple(count_vars(module) for module in [self.ac.pi, self.ac.q1, self.ac.q2])
-        # self.logger.log('\nNumber of parameters: \t pi: %d, \t q1: %d, \t q2: %d\n'%var_counts)
+        counts = tuple(count_vars(module) for module in [self.ac.pi, self.ac.q1, self.ac.q2])
+        self.logger.alert(title = 'Number of parameters', text = f'pi:{counts[0]}, q1: {counts[1]}, q2: {counts[2]}', 
+                          level = 'INFO')
 
         # Set up optimizers for policy and q-function
         self.pi_optimizer = Adam(self.ac.pi.parameters(), lr = lr)
         self.q_optimizer = Adam(self.q_params, lr = lr)
-
-        # Set up model saving
-        # self.logger.setup_pytorch_saver(self.ac)
 
     # Set up function for computing SAC Q-losses
     def compute_loss_q(self, data):
@@ -214,9 +212,6 @@ class SAC:
         loss_q.backward()
         self.q_optimizer.step()
 
-        # Record things
-        # self.logger.store(LossQ = loss_q.item(), **q_info)
-
         # Freeze Q-networks so you don't waste computational effort computing Q gradients during policy learning
         for p in self.q_params:
             p.requires_grad = False
@@ -231,8 +226,7 @@ class SAC:
         for p in self.q_params:
             p.requires_grad = True
 
-        # Record things
-        # self.logger.store(LossPi = loss_pi.item(), **pi_info)
+        self.logger.log({'backprop': {'LossPi': loss_pi.item(), **pi_info, 'LossQ': loss_q.item(), **q_info}})
 
         # Finally, update target networks by polyak averaging.
         with torch.no_grad():
@@ -247,7 +241,6 @@ class SAC:
 
     def test_agent(self):
         for i in range(self.num_test_episodes):
-            print(f'test {i}')
             (observation, _), terminated, episode_return, episode_length = self.test_env.reset(), False, 0, 0
             while not terminated:
                 # Take deterministic actions at test time
@@ -255,7 +248,7 @@ class SAC:
                 observation, reward, terminated, _, _ = self.test_env.step(action)
                 episode_return += reward
                 episode_length += 1
-            # self.logger.store(TestEpRet = episode_return, TestEpLen = episode_length)
+                self.logger.log({'test': {'episode return': episode_return, 'episode length': episode_length}})
 
     def run(self):
         # Prepare for interaction with environment
@@ -267,8 +260,6 @@ class SAC:
         for t in range(total_steps):
             # Until start_steps have elapsed, randomly sample actions from a uniform
             # distribution for better exploration. Afterwards, use the learned policy.
-            if t == self.start_steps:
-                print('started using policy')
             if t > self.start_steps:
                 action = self.get_action(observation)
             else:
@@ -288,12 +279,11 @@ class SAC:
 
             # End of trajectory handling
             if terminated:
-                # self.logger.store(EpRet = episode_return, EpLen = episode_length)
+                self.logger.log({'train': {'episode return': episode_return, 'episode length': episode_length}})
                 (observation, _), episode_return, episode_length = self.env.reset(), 0, 0
 
             # Update handling
             if t >= self.update_after and t % self.update_every == 0:
-                print('backprop')
                 for _ in range(self.update_every):
                     batch = self.replay_buffer.sample_batch(self.batch_size)
                     self.update(data = batch)
@@ -302,24 +292,10 @@ class SAC:
             if (t + 1) % self.steps_per_epoch == 0:
                 epoch = (t + 1) // self.steps_per_epoch
 
-                # # Save model
-                # if (epoch % self.save_freq == 0) or (epoch == self.num_epochs):
-                #     self.logger.save_state({'env': self.env}, None)
+                # Save model
+                if (epoch % self.save_freq == 0) or (epoch == self.num_epochs):
+                    torch.save(self.ac.state_dict(), 'temp/model.pt')
+                    self.logger.log_artifact('temp/model.pt', name = f"actor_critic_epoch_{epoch}.pt")
 
                 # Test the performance of the deterministic version of the agent.
                 self.test_agent()
-
-                # Log info about epoch
-                # self.logger.log_tabular('Epoch', epoch)
-                # self.logger.log_tabular('EpRet', with_min_and_max = True)
-                # self.logger.log_tabular('TestEpRet', with_min_and_max = True)
-                # self.logger.log_tabular('EpLen', average_only = True)
-                # self.logger.log_tabular('TestEpLen', average_only = True)
-                # self.logger.log_tabular('TotalEnvInteracts', t)
-                # self.logger.log_tabular('Q1Vals', with_min_and_max = True)
-                # self.logger.log_tabular('Q2Vals', with_min_and_max = True)
-                # self.logger.log_tabular('LogPi', with_min_and_max = True)
-                # self.logger.log_tabular('LossPi', average_only = True)
-                # self.logger.log_tabular('LossQ', average_only = True)
-                # self.logger.log_tabular('Time', time.time() - start_time)
-                # self.logger.dump_tabular()

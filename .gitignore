@@ -3,6 +3,10 @@ MUJOCO_LOG.TXT
 MJDATA.TXT
 MJMODEL.TXT
 
+# WandB
+wandb/
+temp/
+
 # test script
 *test.py
 
