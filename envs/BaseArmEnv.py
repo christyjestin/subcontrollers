@@ -125,7 +125,7 @@ class BaseArmEnv(MujocoEnv):
     def stuck(self, obs):
         stuck = self.previous_obs and np.allclose(obs[0], self.previous_obs[0]) and (obs[1] == self.previous_obs[1])
         self.previous_obs = obs
-        return stuck
+        return bool(stuck)
 
     def check_for_collision(self, geom1, geom2):
         '''Checks for contact between the two geometries; both inputs should be the names of the geometries'''
@@ -142,7 +142,7 @@ class BaseArmEnv(MujocoEnv):
     @property
     def out_of_bounds(self):
         xy = self.data.qpos[NUM_MOTORS:NUM_MOTORS + Z_INDEX]
-        return np.any(xy > PLANE_HALF_SIZE) or np.any(xy < -PLANE_HALF_SIZE)
+        return bool(np.any(xy > PLANE_HALF_SIZE) or np.any(xy < -PLANE_HALF_SIZE))
 
     # in both cases, the position is invalid because the arm won't be able to complete the task
     # this is a generic termination condition
@@ -169,7 +169,7 @@ class BaseArmEnv(MujocoEnv):
         ball_vel = self.data.qvel[NUM_MOTORS : NUM_MOTORS + 3]
         vec_to_target = self.target_pos - self.ball_pos
         cos_sim = cosine_similarity(ball_vel, vec_to_target)
-        return cos_sim < PERIGEE_COSINE_SIMILARITY_TOLERANCE
+        return bool(cos_sim < PERIGEE_COSINE_SIMILARITY_TOLERANCE)
 
     @property # getter and setter to ensure the side effect of turning the weld constraint on and off
     def ball_in_hand(self):
