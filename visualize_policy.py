@@ -2,7 +2,7 @@ import argparse
 import torch
 
 from envs import *
-from model import MLPActorCritic
+from model import VanillaActorCritic
 from model.core import as_vector
 
 parser = argparse.ArgumentParser()
@@ -20,7 +20,7 @@ env_map = {
 
 def main(env_type, model_path, hidden_sizes, deterministic):
     env = env_map[env_type](render_mode = 'human')
-    model = MLPActorCritic(env.observation_space, env.action_space, hidden_sizes = hidden_sizes)
+    model = VanillaActorCritic(env.observation_space, env.action_space, hidden_sizes = hidden_sizes)
     model.load_state_dict(torch.load(model_path))
     model.eval()
 

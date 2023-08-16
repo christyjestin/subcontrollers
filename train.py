@@ -2,7 +2,7 @@ import argparse
 import torch
 
 from envs import *
-from model import SAC, MLPActorCritic
+from model import SAC, VanillaActorCritic
 
 env_fn_map = {'throw': ThrowEnv, 'catch': CatchEnv, 'set': SetEnv}
 
@@ -17,7 +17,7 @@ parser.add_argument('--num_epochs', type = int, default = 50)
 
 def main():
     args = parser.parse_args()
-    sac = SAC(env_fn = env_fn_map[args.task], exp_name = args.exp_name, actor_critic = MLPActorCritic, seed = args.seed, 
+    sac = SAC(env_fn = env_fn_map[args.task], exp_name = args.exp_name, actor_critic = VanillaActorCritic, seed = args.seed, 
                 ac_kwargs = {'hidden_sizes': [args.hidden_size] * args.num_layers}, num_epochs = args.num_epochs, 
                 gamma = args.gamma)
     sac.run()

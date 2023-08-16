@@ -226,6 +226,10 @@ class BaseArmEnv(MujocoEnv):
     def ball_and_fist_colliding(self):
         return self.check_for_collision('fist_geom', 'ball_geom')
 
+    @property
+    def name(self):
+        return self.__class__.__name__
+
     # logic is dependent on the environment
     def handle_fist(self, close_fist):
         raise NotImplementedError

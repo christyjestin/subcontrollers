@@ -1,4 +1,4 @@
 from model.sac import SAC
-from model.core import MLPActorCritic
+from model.core import VanillaActorCritic, MultiActorCritic
 
-__all__ = ['SAC', 'MLPActorCritic']
+__all__ = ['SAC', 'VanillaActorCritic', 'MultiActorCritic']
