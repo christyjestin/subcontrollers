@@ -139,7 +139,7 @@ class MAC:
         self.pi_optimizer = Adam(self.ac.pis.parameters(), lr = lr)
         self.q_optimizer = Adam(self.q_params, lr = lr)
 
-    def compute_loss_q(self, data, task_index):
+    def compute_q_loss(self, data, task_index):
         observation, action, reward, next_observation, terminated = data['observation'], data['action'], \
                                                 data['reward'], data['next_observation'], data['terminated']
 
@@ -166,30 +166,33 @@ class MAC:
         q_info = {f'Q1Vals ({task_index})': q1.detach().numpy(), f'Q2Vals ({task_index})': q2.detach().numpy()}
         return loss_q, q_info
 
-    def compute_loss_pi(self, subcontroller_index, batches):
+    def compute_pi_loss(self, subcontroller_index, batches):
         loss_vals = []
-        for (env_index, batch) in batches:
+        logprobs = []
+        for env_index, batch in enumerate(batches):
             if batch is None:
-                continue
+                continue # empty batch
             observation = batch['observation']
-            pi, logprob_pi = self.ac.pis[subcontroller_index](observation)
+            pi, logprob = self.ac.pis[subcontroller_index](observation)
             q1_pi = self.ac.q1s[env_index](observation, pi)
             q2_pi = self.ac.q2s[env_index](observation, pi)
             q_pi = torch.min(q1_pi, q2_pi)
             # Entropy-regularized policy loss
-            loss_vals.append(self.alpha * logprob_pi - q_pi)
+            loss_vals.append(self.alpha * logprob - q_pi)
+            logprobs.append(logprob)
         loss_pi = torch.cat(loss_vals).mean()
+        logprob_pi = torch.cat(logprobs).mean()
         pi_info = dict(LogPi = logprob_pi.detach().numpy()) # Useful info for logging
         return loss_pi, pi_info
 
     def update(self):
-        complete_q_info = {}
         # First run one gradient descent step for each Q1 and Q2
+        full_q_info = {}
         self.q_optimizer.zero_grad()
         for env_index in range(self.num_envs):
             batch = self.replay_buffers[env_index].sample_q_batch(self.batch_size)
-            loss_q, q_info = self.compute_loss_q(batch, env_index)
-            complete_q_info.update(q_info)
+            loss_q, q_info = self.compute_q_loss(batch, env_index)
+            full_q_info.update(q_info)
             loss_q.backward()
         self.q_optimizer.step()
 
@@ -198,13 +201,18 @@ class MAC:
             p.requires_grad = False
 
         # Next run one gradient descent step for each subcontroller
+        full_pi_info = {}
         self.pi_optimizer.zero_grad()
         for subcontroller_index in range(self.num_subcontrollers):
+            # give more weight to envs that use the subcontroller more often; this sampling scheme is equivalent (in
+            # probability) to directly drawing from all environment steps that use the subcontroller (across tasks)
             env_probs = sum_to_one([buffer.num_steps(subcontroller_index) for buffer in self.replay_buffers])
+            # number of samples to take from each environment
             batch_sizes = np.random.multinomial(self.batch_size, pvals = env_probs)
             batches = [buffer.sample_pi_batch(subcontroller_index, batch_size) for buffer, batch_size in
                         zip(self.replay_buffers, batch_sizes)]
-            loss_pi, pi_info = self.compute_loss_pi(subcontroller_index, batches)
+            loss_pi, pi_info = self.compute_pi_loss(subcontroller_index, batches)
+            full_pi_info.update(pi_info)
             loss_pi.backward()
         self.pi_optimizer.step()
 
@@ -212,7 +220,7 @@ class MAC:
         for p in self.q_params:
             p.requires_grad = True
 
-        self.logger.log({'backprop': {'LossPi': loss_pi.item(), **pi_info, 'LossQ': loss_q.item(), **complete_q_info}})
+        self.logger.log({'backprop': {'LossPi': loss_pi.item(), **full_pi_info, 'LossQ': loss_q.item(), **full_q_info}})
 
         # Finally, update target networks by polyak averaging.
         with torch.no_grad():
@@ -225,16 +233,16 @@ class MAC:
     def get_action(self, observation, env_index, deterministic = False):
         return self.ac.action(torch.as_tensor(as_vector(observation), dtype = torch.float32), env_index, deterministic)
 
-    def test_agent(self, env):
+    def test_agent(self, env, env_index):
         for _ in range(self.num_test_episodes):
             (observation, _), terminated, episode_return, episode_length = env.reset(), False, 0, 0
             while not terminated:
                 # Take deterministic actions at test time
-                action = self.get_action(observation, deterministic = True)
+                action, _ = self.get_action(observation, env_index, deterministic = True)
                 observation, reward, terminated, _, _ = env.step(action)
                 episode_return += reward
                 episode_length += 1
-                self.logger.log({env.name: {'test': {'episode return': episode_return, 'episode length': episode_length}}})
+            self.logger.log({env.name: {'test': {'episode return': episode_return, 'episode length': episode_length}}})
 
     # TODO: 
     def assign_subcontroller(self, env_index, observation, action):
@@ -248,17 +256,17 @@ class MAC:
         observations = [self.envs[i].reset() for i in range(self.num_envs)]
 
         for t in range(total_steps):
-            # Environment interactions
-            for env_index in range(self.num_envs):
+            # Environment interactions for all tasks
+            for env_index, env in enumerate(self.envs):
                 # Until start_steps have elapsed, randomly sample actions from a uniform
                 # distribution for better exploration. Afterwards, use the learned policy.
                 if t > self.start_steps:
-                    action = self.get_action(observations[env_index])
+                    action, subcontroller_index = self.get_action(observations[env_index], env_index)
                 else:
-                    action = self.envs[env_index].action_space.sample()
+                    action = env.action_space.sample()
                     subcontroller_index = self.assign_subcontroller(env_index, observations[env_index], action)
 
-                next_observation, reward, terminated, _, _ = self.envs[env_index].step(action)
+                next_observation, reward, terminated, _, _ = env.step(action)
                 episode_returns[env_index] += reward
                 episode_lengths[env_index] += 1
 
@@ -270,13 +278,12 @@ class MAC:
 
                 # End of trajectory handling
                 if terminated:
-                    env_name = self.envs[env_index].name
-                    self.logger.log({env_name: {'train': {'episode return': episode_returns[env_index], 
+                    self.logger.log({env.name: {'train': {'episode return': episode_returns[env_index], 
                                                           'episode length': episode_lengths[env_index]}}})
-                    observations[env_index], _ = self.envs[env_index].reset()
+                    observations[env_index], _ = env.reset()
                     episode_returns[env_index], episode_lengths[env_index] = 0, 0
 
-            # Backprop (the order of the for loops is chosen so that the environments take turns to backprop)
+            # Backprop
             if t >= self.update_after and t % self.update_every == 0:
                 for _ in range(self.update_every):
                     self.update()

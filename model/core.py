@@ -84,7 +84,8 @@ class SquashedGaussianMLPActor(nn.Module):
             # Try deriving it yourself as a (very difficult) exercise. :)
             logp_pi = continuous_dist.log_prob(continuous_action).sum(axis = -1)
             logp_pi -= 2 * (np.log(2) - continuous_action - F.softplus(-2 * continuous_action)).sum(axis = 1)
-            logp_pi += torch.squeeze(discrete_action * torch.log(p) + (1 - discrete_action) * torch.log(1 - p), dim = -1)
+            logp_discrete = discrete_action * torch.log(p) + (1 - discrete_action) * torch.log(1 - p)
+            logp_pi += torch.squeeze(logp_discrete, dim = -1)
         else:
             logp_pi = None
         continuous_action = self.act_limit * torch.tanh(continuous_action)
@@ -110,6 +111,8 @@ class VanillaActorCritic(nn.Module):
         # build policy and value functions
         obs_dim = get_space_dim(observation_space)
         act_dim = get_space_dim(action_space)
+        continuous_act_dim = act_dim - 1
+        self.action_split = [continuous_act_dim, 1]
         act_limit = action_space[0].high
         self.pi = SquashedGaussianMLPActor(obs_dim, act_dim, act_limit, hidden_sizes, activation)
         self.q1 = MLPQFunction(obs_dim, act_dim, hidden_sizes, activation)
@@ -118,7 +121,7 @@ class VanillaActorCritic(nn.Module):
     @torch.no_grad()
     def action(self, observation, deterministic = False):
         action, _ = self.pi(observation, deterministic, with_logprob = False)
-        continuous_action, discrete_action = torch.split(action, [2, 1])
+        continuous_action, discrete_action = torch.split(action, self.action_split)
         return (continuous_action.numpy(), discrete_action.bool()[0].item())
 
 
@@ -132,6 +135,8 @@ class MultiActorCritic(nn.Module):
         validate_space(env.action_space, is_obs_space = False)
         obs_dim = get_space_dim(env.observation_space)
         act_dim = get_space_dim(env.action_space)
+        continuous_act_dim = act_dim - 1
+        self.action_split = [continuous_act_dim, 1]
         act_limit = env.action_space[0].high
         assert all(isinstance(env, BaseArmEnv) for env in envs), f'Invalid environments: {envs}'
 
@@ -141,15 +146,14 @@ class MultiActorCritic(nn.Module):
         self.q1s = [MLPQFunction(obs_dim, act_dim, hidden_sizes, activation) for _ in range(num_envs)]
         self.q2s = [MLPQFunction(obs_dim, act_dim, hidden_sizes, activation) for _ in range(num_envs)]
 
-    @torch.no_grad()
+    @torch.no_grad() # this function is not meant for batch computations
     def action(self, observation, env_index, deterministic = False):
         # sample candidate actions from all subcontrollers
         candidates = [pi(observation, deterministic, with_logprob = False)[0] for pi in self.pis]
-        index = self.select_subcontroller(observation, env_index, candidates, deterministic = deterministic)
-        # package the chosen action
-        action = candidates[index]
-        continuous_action, discrete_action = torch.split(action, [2, 1])
-        return (continuous_action.numpy(), discrete_action.bool()[0].item())
+        subcontroller_index = self.select_subcontroller(observation, env_index, candidates, deterministic)
+        action = candidates[subcontroller_index]
+        continuous_action, discrete_action = torch.split(action, self.action_split) # package the chosen action
+        return (continuous_action.numpy(), discrete_action.bool()[0].item()), subcontroller_index
 
     @torch.no_grad() # use q values as logits to select a subcontroller based on proposed actions
     def select_subcontroller(self, observation, env_index, candidates, deterministic = False):
@@ -190,8 +194,7 @@ class ReplayBuffer:
         self.size = min(self.size + 1, self.max_size)
 
     def sample_batch(self, batch_size = 32):
-        idxs = np.random.randint(0, self.size, size = batch_size)
-        return self.package_batch(idxs)
+        return self.package_batch(idxs = np.random.randint(0, self.size, size = batch_size))
 
     def package_batch(self, idxs):
         batch = dict(observation = self.observation_buffer[idxs], 
@@ -208,7 +211,7 @@ class SubcontrollerReplayBuffer(ReplayBuffer):
     def __init__(self, obs_dim, act_dim, num_subcontrollers, size):
         super().__init__(self, obs_dim, act_dim, size)
         self.subcontroller_index_buffer = np.zeros(size, dtype = np.int16)
-        # the ith element is a list of the stored step indices were the ith subcontroller was used
+        # the ith element is a list containing the indices of the environment steps where the ith subcontroller was used
         self.steps_by_subcontroller = [[] for _ in range(num_subcontrollers)]
 
     def store(self, observation, action, reward, next_observation, terminated, subcontroller_index):
@@ -227,8 +230,11 @@ class SubcontrollerReplayBuffer(ReplayBuffer):
     def sample_pi_batch(self, subcontroller_index, batch_size):
         if batch_size == 0:
             return None # empty batch
-        idxs = np.random.randint(0, len(self.steps_by_subcontroller[subcontroller_index]), size = batch_size)
-        return self.package_batch(idxs)
+        list_idxs = np.random.randint(0, len(self.steps_by_subcontroller[subcontroller_index]), size = batch_size)
+        # reindex into the list containing steps that belong to the given subcontroller; we're indexing into
+        # a list instead of an array, so this list comprehension is a workaround to mimic array indexing
+        buffer_idxs = np.array([self.steps_by_subcontroller[subcontroller_index][i] for i in list_idxs])
+        return self.package_batch(buffer_idxs)
 
     def num_steps(self, subcontroller_index):
         return len(self.steps_by_subcontroller[subcontroller_index])

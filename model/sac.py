@@ -123,7 +123,7 @@ class SAC:
         self.q_optimizer = Adam(self.q_params, lr = lr)
 
 
-    def compute_loss_q(self, data):
+    def compute_q_loss(self, data):
         observation, action, reward, next_observation, terminated = data['observation'], data['action'], \
                                                 data['reward'], data['next_observation'], data['terminated']
 
@@ -149,8 +149,7 @@ class SAC:
         q_info = dict(Q1Vals = q1.detach().numpy(), Q2Vals = q2.detach().numpy()) # Useful info for logging
         return loss_q, q_info
 
-    # Set up function for computing SAC pi loss
-    def compute_loss_pi(self, data):
+    def compute_pi_loss(self, data):
         observation = data['observation']
         pi, logprob_pi = self.ac.pi(observation)
         q1_pi = self.ac.q1(observation, pi)
@@ -164,7 +163,7 @@ class SAC:
     def update(self, data):
         # First run one gradient descent step for Q1 and Q2
         self.q_optimizer.zero_grad()
-        loss_q, q_info = self.compute_loss_q(data)
+        loss_q, q_info = self.compute_q_loss(data)
         loss_q.backward()
         self.q_optimizer.step()
 
@@ -174,7 +173,7 @@ class SAC:
 
         # Next run one gradient descent step for pi.
         self.pi_optimizer.zero_grad()
-        loss_pi, pi_info = self.compute_loss_pi(data)
+        loss_pi, pi_info = self.compute_pi_loss(data)
         loss_pi.backward()
         self.pi_optimizer.step()
 
@@ -204,7 +203,7 @@ class SAC:
                 observation, reward, terminated, _, _ = self.test_env.step(action)
                 episode_return += reward
                 episode_length += 1
-                self.logger.log({'test': {'episode return': episode_return, 'episode length': episode_length}})
+            self.logger.log({'test': {'episode return': episode_return, 'episode length': episode_length}})
 
     def run(self):
         total_steps = self.steps_per_epoch * self.num_epochs
