@@ -146,7 +146,7 @@ class MultiActorCritic(nn.Module):
         self.q1s = [MLPQFunction(obs_dim, act_dim, hidden_sizes, activation) for _ in range(num_envs)]
         self.q2s = [MLPQFunction(obs_dim, act_dim, hidden_sizes, activation) for _ in range(num_envs)]
 
-    @torch.no_grad() # this function is not meant for batch computations
+    @torch.no_grad() # this function is not meant for batch computations because of the final packaging step
     def action(self, observation, env_index, deterministic = False):
         # sample candidate actions from all subcontrollers
         candidates = [pi(observation, deterministic, with_logprob = False)[0] for pi in self.pis]
