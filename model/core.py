@@ -129,44 +129,71 @@ class MultiActorCritic(nn.Module):
     def __init__(self, envs, num_subcontrollers, hidden_sizes = (256, 256), activation = nn.ReLU):
         super().__init__()
         assert isinstance(num_subcontrollers, int) and num_subcontrollers > 1
+        self.num_subcontrollers = num_subcontrollers
         # get dimensions from first environment and then check that they all fit the same base environment
         env = envs[0]
         validate_space(env.observation_space, is_obs_space = True)
         validate_space(env.action_space, is_obs_space = False)
-        obs_dim = get_space_dim(env.observation_space)
-        act_dim = get_space_dim(env.action_space)
-        continuous_act_dim = act_dim - 1
+        self.obs_dim = get_space_dim(env.observation_space)
+        self.act_dim = get_space_dim(env.action_space)
+        continuous_act_dim = self.act_dim - 1
         self.action_split = [continuous_act_dim, 1]
         act_limit = env.action_space[0].high
         assert all(isinstance(env, BaseArmEnv) for env in envs), f'Invalid environments: {envs}'
 
         num_envs = len(envs)
-        self.pis = [SquashedGaussianMLPActor(obs_dim, act_dim, act_limit, hidden_sizes, activation)
-                        for _ in range(num_subcontrollers)]
-        self.q1s = [MLPQFunction(obs_dim, act_dim, hidden_sizes, activation) for _ in range(num_envs)]
-        self.q2s = [MLPQFunction(obs_dim, act_dim, hidden_sizes, activation) for _ in range(num_envs)]
+        self.pis = [SquashedGaussianMLPActor(self.obs_dim, self.act_dim, act_limit, hidden_sizes, activation)
+                        for _ in range(self.num_subcontrollers)]
+        self.q1s = [MLPQFunction(self.obs_dim, self.act_dim, hidden_sizes, activation) for _ in range(num_envs)]
+        self.q2s = [MLPQFunction(self.obs_dim, self.act_dim, hidden_sizes, activation) for _ in range(num_envs)]
+
+    # expand an observation to have an extra initial dimension of size num_subcontrollers
+    # this is meant to align the shape of observations and candidate actions
+    def expand_observation(self, obs):
+        other_dims = [-1] * len(obs.shape)
+        return torch.unsqueeze(obs, dim = 0).expand(self.num_subcontrollers, *other_dims)
 
     @torch.no_grad() # this function is not meant for batch computations because of the final packaging step
     def action(self, observation, env_index, deterministic = False):
+        assert observation.shape == (self.obs_dim,), f'Invalid shape for observation: {observation.shape}'
+
+        observation = torch.unsqueeze(observation, dim = 0)
         # sample candidate actions from all subcontrollers
-        candidates = [pi(observation, deterministic, with_logprob = False)[0] for pi in self.pis]
-        subcontroller_index = self.select_subcontroller(observation, env_index, candidates, deterministic)
+        candidates = torch.stack([pi(observation, deterministic, with_logprob = False)[0] for pi in self.pis])
+        subcontroller_index = self.select_subcontroller(observation, env_index, candidates, deterministic)[0]
         action = candidates[subcontroller_index]
         continuous_action, discrete_action = torch.split(action, self.action_split) # package the chosen action
         return (continuous_action.numpy(), discrete_action.bool()[0].item()), subcontroller_index
 
     @torch.no_grad() # use q values as logits to select a subcontroller based on proposed actions
-    def select_subcontroller(self, observation, env_index, candidates, deterministic = False):
-        q1_vals = torch.tensor([self.q1s[env_index](observation, candidate) for candidate in candidates])
-        q2_vals = torch.tensor([self.q2s[env_index](observation, candidate) for candidate in candidates])
-        logits = torch.min(torch.stack((q1_vals, q2_vals)), dim = 0)
-        return torch.argmax(logits) if deterministic else torch.multinomial(torch.softmax(logits), 1)
+    def select_subcontroller(self, observations, env_index, candidates, deterministic = False):
+        assert len(observations.shape) == 2 and observations.shape[1] == self.obs_dim, \
+            f'Invalid shape for observations: {observations.shape}'
+        assert len(candidates.shape) == 3 and candidates.shape[0] == self.num_subcontrollers and \
+            candidates.shape[2] == self.act_dim, f'Invalid shape for candidates: {candidates.shape}'
+        assert observations.shape[0] == candidates.shape[1], 'Batch sizes must be aligned'
+
+        observations = self.expand_observation(observations) # s x n x o (candidates is s x n x a)
+        q1_vals = self.q1s[env_index](observations, candidates) # s x n
+        q2_vals = self.q2s[env_index](observations, candidates) # s x n
+        logits = torch.min(torch.stack((q1_vals, q2_vals)), dim = 0) # s x n
+        if deterministic:
+            return torch.argmax(logits, dim = 0) # n,
+        else:
+            # multinomial requires that the rows contain probabilities, so we have to transpose the tensor first
+            probs = torch.softmax(logits, dim = 0).T # n x s
+            return torch.multinomial(probs, 1).flatten() # n,
 
     @torch.no_grad()
-    def next_action_for_backup(self, observation, env_index):
-        candidates, logprobs = zip(*[pi(observation) for pi in self.pis])
-        index = self.select_subcontroller(observation, env_index, candidates)
-        return candidates[index], logprobs[index]
+    def next_action_for_backup(self, observations, env_index):
+        assert len(observations.shape) == 2 and observations.shape[1] == self.obs_dim, \
+            f'Invalid shape for observations: {observations.shape}'
+
+        n = observations.shape[0] # batch size
+        candidates, logprobs = zip(*[pi(observations) for pi in self.pis])
+        candidates, logprobs = torch.stack(candidates), torch.stack(logprobs) # s x n x a, s x n
+        indices = self.select_subcontroller(observations, env_index, candidates)
+        return candidates[indices, torch.arange(n)], logprobs[indices, torch.arange(n)] # n x a, n
 
 
 class ReplayBuffer:
