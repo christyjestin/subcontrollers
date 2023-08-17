@@ -214,13 +214,16 @@ class MAC:
     def test_agent(self, env, env_index):
         for _ in range(self.num_test_episodes):
             (observation, _), terminated, episode_return, episode_length = env.reset(), False, 0, 0
+            subcontroller_counts = [0] * self.num_subcontrollers
             while not terminated:
                 # Take deterministic actions at test time
-                action, _ = self.get_action(observation, env_index, deterministic = True)
+                action, subcontroller_index = self.get_action(observation, env_index, deterministic = True)
+                subcontroller_counts[subcontroller_index] += 1
                 observation, reward, terminated, _, _ = env.step(action)
                 episode_return += reward
                 episode_length += 1
-            self.logger.log({env.name: {'test': {'episode return': episode_return, 'episode length': episode_length}}})
+            self.logger.log({env.name: {'test': {'episode return': episode_return, 'episode length': episode_length, 
+                                                 'subcontroller_counts': subcontroller_counts}}})
 
     # TODO: 
     def assign_subcontroller(self, env_index, observation, action):
