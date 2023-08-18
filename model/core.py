@@ -7,6 +7,13 @@ from gymnasium.spaces import Tuple, Box, Discrete
 
 from envs import BaseArmEnv
 
+def KNN(data, labels, new_point, k):
+    dists = np.linalg.norm(data - new_point, axis = 1)
+    top_idxs = np.argsort(dists)[:k]
+    votes = labels[top_idxs]
+    vals, counts = np.unique(votes, return_counts = True)
+    return vals[np.argmax(counts)]
+
 def sum_to_one(lst):
     return np.array(lst) / np.sum(lst) # returns to an array that sums to 1 (useful for getting probabilities)
 
@@ -242,6 +249,11 @@ class SubcontrollerReplayBuffer(ReplayBuffer):
         self.steps_by_subcontroller = [[] for _ in range(num_subcontrollers)]
 
     def store(self, observation, action, reward, next_observation, terminated, subcontroller_index):
+        # special case for early steps where we aren't assigning subcontrollers yet
+        if subcontroller_index == -1:
+            super().store(self, observation, action, reward, next_observation, terminated)
+            return
+
         # we're overwriting old data if the buffer's full, so we should update the subcontroller records accordingly
         if self.size == self.max_size:
             prev_subcontroller_index = self.subcontroller_index_buffer[self.ptr]

@@ -3,6 +3,8 @@ import itertools
 import numpy as np
 import torch
 from torch.optim import Adam
+from sklearn.decomposition import KernelPCA
+from sklearn.cluster import AgglomerativeClustering
 import time
 import wandb
 
@@ -60,8 +62,9 @@ class MAC:
         start_steps (int): Number of steps for uniform-random action selection, before running real policy. \
             Helps exploration.
 
-        update_after (int): Number of env interactions to collect before starting to do gradient descent \
-        updates. Ensures replay buffer is full enough for useful updates.
+        update_after (int): Number of env interactions to collect before starting to do gradient descent updates. \
+        Ensures replay buffer is full enough for useful updates. This is also the point where we'll use clustering \
+        methods to assign subcontrollers to the initial observations from random exploration.
 
         update_every (int): Number of env interactions that should elapse between gradient descent updates. \
         Note: Regardless of how long you wait between updates, the ratio of env steps to gradient steps is locked to 1.
@@ -116,6 +119,15 @@ class MAC:
 
         self.pi_optimizer = Adam(self.ac.pis.parameters(), lr = lr)
         self.q_optimizer = Adam(self.q_params, lr = lr)
+
+        # data structures for assigning subcontrollers (this is done by clustering observations from random exploration)
+        n_components = 8
+        self.kernel_pcas = [KernelPCA(n_components = n_components, kernel = 'rbf', eigen_solver = 'arpack')
+                            for _ in range(self.num_envs)]
+        # we stop using KNN to assign subcontrollers after random exploration, 
+        # so the number of points we need to store is start_steps
+        self.knn_points = [np.zeros((self.start_steps, n_components), dtype = np.float32) for _ in range(self.num_envs)]
+        self.k = 9
 
     def compute_q_loss(self, data, task_index):
         observation, action, reward, next_observation, terminated = data['observation'], data['action'], \
@@ -225,9 +237,41 @@ class MAC:
             self.logger.log({env.name: {'test': {'episode return': episode_return, 'episode length': episode_length, 
                                                  'subcontroller_counts': subcontroller_counts}}})
 
-    # TODO: 
-    def assign_subcontroller(self, env_index, observation, action):
-        pass
+    # We assign a subcontroller for the new observation in two steps:
+    # 1. Apply a nonlinear transformation to reduce the dimensionality of the observation
+    # 2. Run KNN on the reduced observation to assign a subcontroller (the neighbors in KNN are
+    #    all previous observations — all of which have already been assigned to a subcontroller)
+    def assign_subcontroller(self, env_index, observation):
+        idx = self.replay_buffers[env_index].ptr
+        transformed = self.kernel_pcas[env_index].transform(observation.reshape(1, -1))
+        # run KNN on transformed data
+        labels = self.replay_buffers[env_index].subcontroller_index_buffer[:idx]
+        assignment = KNN(data = self.knn_points[env_index][:idx], labels = labels, new_point = transformed, k = self.k)
+        # store transformed data point for future runs of KNN
+        self.knn_points[env_index][idx] = transformed.flatten()
+        return assignment
+
+    # TODO: while finetuning clustering process, consider using t-SNE and check for even clusters
+    # TODO: after finetuning, remove print statements and add clustering args as class args
+    # See `assign_subcontroller` for context; this function initiates the process in 3 steps:
+    # 1. Fit a nonlinear transformation by running Kernel PCA on initial observations
+    # 2. Run a clustering algorithm to produce initial subcontroller assignments for observations
+    # 3. Save these assignments to use in the KNN classification scheme for later observations
+    def start_assigning_subcontrollers(self, env_index):
+        print(self.replay_buffers[env_index].ptr)
+        # run kernel PCA to apply a nonlinear transformation to observations
+        data = self.replay_buffers[env_index].observation_buffer[:self.update_after]
+        transformed_data = self.kernel_pcas[env_index].fit_transform(data)
+        # run clustering algorithm
+        HAC = AgglomerativeClustering(n_clusters = self.num_subcontrollers, linkage = 'single', compute_full_tree = False)
+        assignments = HAC.fit_predict(transformed_data)
+        print(np.unique(assignments, return_counts = True))
+        # store transformed data to run KNN in future timesteps
+        self.knn_points[env_index][:self.update_after] = transformed_data
+        # store assigned subcontrollers
+        self.replay_buffers[env_index].subcontroller_index_buffer[:self.update_after] = assignments
+        for i, v in enumerate(assignments):
+            self.replay_buffers[env_index].steps_by_subcontroller[v].append(i)
 
     def run(self):
         total_steps = self.steps_per_epoch * self.num_epochs
@@ -245,7 +289,11 @@ class MAC:
                     action, subcontroller_index = self.get_action(observations[env_index], env_index)
                 else:
                     action = env.action_space.sample()
-                    subcontroller_index = self.assign_subcontroller(env_index, observations[env_index], action)
+                    # can't assign a subcontroller until we've fit our clustering methods
+                    if t >= self.update_after:
+                        subcontroller_index = self.assign_subcontroller(env_index, as_vector(observations[env_index]))
+                    else:
+                        subcontroller_index = -1
 
                 next_observation, reward, terminated, _, _ = env.step(action)
                 episode_returns[env_index] += reward
@@ -263,6 +311,10 @@ class MAC:
                                                           'episode length': episode_lengths[env_index]}}})
                     observations[env_index], _ = env.reset()
                     episode_returns[env_index], episode_lengths[env_index] = 0, 0
+
+            # Fit clustering methods and retroactively assign subcontrollers
+            if t + 1 == self.update_after:
+                self.start_assigning_subcontrollers(env_index)
 
             # Backprop
             if t >= self.update_after and t % self.update_every == 0:

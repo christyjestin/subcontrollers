@@ -96,7 +96,6 @@ class BaseArmEnv(MujocoEnv):
         self._ctrl_cost_weight = 1
         self._change_fist_weight = 1
         self._reward_weight = reward_weight
-        # TODO: figure out reward range and spec
 
         self._launch_point_pos = self.model.body('launch_point').pos
         self._target_pos = self.model.body('target').pos
