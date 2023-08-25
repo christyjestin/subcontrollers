@@ -5,10 +5,16 @@ import torch
 from torch.optim import Adam
 from sklearn.decomposition import KernelPCA
 from sklearn.cluster import AgglomerativeClustering
+from sklearn.preprocessing import StandardScaler
 import time
 import wandb
+from tqdm import tqdm
 
 from model.core import *
+
+MIN_COUNT = 40
+NUM_KERNEL_PCA_COMPONENTS = 10
+NUM_NEIGHBORS = 9 # k for kNN
 
 class MAC:
     """
@@ -72,12 +78,14 @@ class MAC:
         num_test_episodes (int): Number of episodes to test the deterministic policy at the end of each epoch.
 
         save_freq (int): How often (in terms of gap between epochs) to save the current policy and value function.
+        
+        use_wandb (bool): Whether to use WandB logging
     """
 
     def __init__(self, env_fns, exp_name, num_subcontrollers, actor_critic = MultiActorCritic, ac_kwargs = dict(), 
                  seed = 0, steps_per_epoch = 4000, num_epochs = 100, replay_size = int(1e6), gamma = 0.99, 
                  polyak = 0.995, lr = 1e-3, alpha = 0.2, batch_size = 100, start_steps = 10000, update_after = 1000, 
-                 update_every = 50, num_test_episodes = 10, save_freq = 1):
+                 update_every = 50, num_test_episodes = 10, save_freq = 1, use_wandb = False):
         self.num_envs = len(env_fns)
         self.num_subcontrollers = num_subcontrollers
         self.exp_name = exp_name
@@ -92,8 +100,10 @@ class MAC:
         self.update_every = update_every
         self.num_test_episodes = num_test_episodes
         self.save_freq = save_freq
+        self.use_wandb = use_wandb
 
-        self.logger = wandb.init(project = "subcontrollers", name = exp_name, config = locals())
+        if self.use_wandb:
+            self.logger = wandb.init(project = "subcontrollers", name = exp_name, config = locals())
 
         torch.manual_seed(seed)
         np.random.seed(seed)
@@ -107,27 +117,29 @@ class MAC:
         for p in self.ac_targ.parameters():
             p.requires_grad = False
 
-        self.q_params = itertools.chain(self.ac.q1s.parameters(), self.ac.q2s.parameters())
+        self.q_params = itertools.chain(*[q.parameters() for q in (self.ac.q1s + self.ac.q2s)])
+        self.pi_params = itertools.chain(*[pi.parameters() for pi in self.ac.pis])
         obs_dim = get_space_dim(self.envs[0].observation_space)
         act_dim = get_space_dim(self.envs[0].action_space)
         # Each environment has its own buffer
-        self.replay_buffers = [SubcontrollerReplayBuffer(obs_dim = obs_dim, act_dim = act_dim, size = replay_size) 
+        self.replay_buffers = [SubcontrollerReplayBuffer(obs_dim, act_dim, self.num_subcontrollers, replay_size) 
                                 for _ in range(self.num_envs)]
-        counts = tuple(count_vars(module) for module in [self.ac.pi, self.ac.q1, self.ac.q2])
-        self.logger.alert(title = 'Number of parameters', text = f'pi:{counts[0]}, q1: {counts[1]}, q2: {counts[2]}', 
-                          level = 'INFO')
+        counts = tuple(count_vars(module) for module in [*self.ac.pis, *self.ac.q1s, *self.ac.q2s])
+        if self.use_wandb:
+            self.logger.alert(title = 'Number of parameters', level = 'INFO', 
+                              text = f'pi:{counts[0]}, q1: {counts[1]}, q2: {counts[2]}')
 
-        self.pi_optimizer = Adam(self.ac.pis.parameters(), lr = lr)
+        self.pi_optimizer = Adam(self.pi_params, lr = lr)
         self.q_optimizer = Adam(self.q_params, lr = lr)
 
         # data structures for assigning subcontrollers (this is done by clustering observations from random exploration)
-        n_components = 8
-        self.kernel_pcas = [KernelPCA(n_components = n_components, kernel = 'rbf', eigen_solver = 'arpack')
+        self.kernel_pcas = [KernelPCA(n_components = NUM_KERNEL_PCA_COMPONENTS, kernel = 'rbf', eigen_solver = 'arpack')
                             for _ in range(self.num_envs)]
+        self.standard_scalers = [StandardScaler() for _ in range(self.num_envs)]
         # we stop using KNN to assign subcontrollers after random exploration, 
-        # so the number of points we need to store is start_steps
-        self.knn_points = [np.zeros((self.start_steps, n_components), dtype = np.float32) for _ in range(self.num_envs)]
-        self.k = 9
+        # so the number of points we need to store is exactly start_steps
+        self.knn_points = [np.zeros((self.start_steps, NUM_KERNEL_PCA_COMPONENTS), dtype = np.float32)
+                           for _ in range(self.num_envs)]
 
     def compute_q_loss(self, data, task_index):
         observation, action, reward, next_observation, terminated = data['observation'], data['action'], \
@@ -210,7 +222,9 @@ class MAC:
         for p in self.q_params:
             p.requires_grad = True
 
-        self.logger.log({'backprop': {'LossPi': loss_pi.item(), **full_pi_info, 'LossQ': loss_q.item(), **full_q_info}})
+        if self.use_wandb:
+            self.logger.log({'backprop': {'LossPi': loss_pi.item(), **full_pi_info, 'LossQ': loss_q.item(), 
+                                          **full_q_info}})
 
         # Finally, update target networks by polyak averaging.
         with torch.no_grad():
@@ -234,8 +248,10 @@ class MAC:
                 observation, reward, terminated, _, _ = env.step(action)
                 episode_return += reward
                 episode_length += 1
-            self.logger.log({env.name: {'test': {'episode return': episode_return, 'episode length': episode_length, 
-                                                 'subcontroller_counts': subcontroller_counts}}})
+            if self.use_wandb:
+                self.logger.log({env.name: {'test': {'episode return': episode_return, 
+                                                     'episode length': episode_length, 
+                                                     'subcontroller_counts': subcontroller_counts}}})
 
     # We assign a subcontroller for the new observation in two steps:
     # 1. Apply a nonlinear transformation to reduce the dimensionality of the observation
@@ -243,29 +259,31 @@ class MAC:
     #    all previous observations — all of which have already been assigned to a subcontroller)
     def assign_subcontroller(self, env_index, observation):
         idx = self.replay_buffers[env_index].ptr
-        transformed = self.kernel_pcas[env_index].transform(observation.reshape(1, -1))
+        scaled = self.standard_scalers[env_index].transform(observation.reshape(1, -1))
+        transformed = self.kernel_pcas[env_index].transform(scaled)
         # run KNN on transformed data
         labels = self.replay_buffers[env_index].subcontroller_index_buffer[:idx]
-        assignment = KNN(data = self.knn_points[env_index][:idx], labels = labels, new_point = transformed, k = self.k)
+        assignment = KNN(data = self.knn_points[env_index][:idx], labels = labels, new_point = transformed, 
+                         k = NUM_NEIGHBORS)
         # store transformed data point for future runs of KNN
         self.knn_points[env_index][idx] = transformed.flatten()
         return assignment
 
-    # TODO: while finetuning clustering process, consider using t-SNE and check for even clusters
-    # TODO: after finetuning, remove print statements and add clustering args as class args
     # See `assign_subcontroller` for context; this function initiates the process in 3 steps:
     # 1. Fit a nonlinear transformation by running Kernel PCA on initial observations
     # 2. Run a clustering algorithm to produce initial subcontroller assignments for observations
     # 3. Save these assignments to use in the KNN classification scheme for later observations
     def start_assigning_subcontrollers(self, env_index):
-        print(self.replay_buffers[env_index].ptr)
-        # run kernel PCA to apply a nonlinear transformation to observations
+        # standardize and run kernel PCA to apply a nonlinear transformation to observations
         data = self.replay_buffers[env_index].observation_buffer[:self.update_after]
-        transformed_data = self.kernel_pcas[env_index].fit_transform(data)
+        scaled_data = self.standard_scalers[env_index].fit_transform(data)
+        transformed_data = self.kernel_pcas[env_index].fit_transform(scaled_data)
         # run clustering algorithm
-        HAC = AgglomerativeClustering(n_clusters = self.num_subcontrollers, linkage = 'single', compute_full_tree = False)
+        HAC = AgglomerativeClustering(n_clusters = self.num_subcontrollers, linkage = 'ward', compute_full_tree = False)
         assignments = HAC.fit_predict(transformed_data)
-        print(np.unique(assignments, return_counts = True))
+        _, counts = np.unique(assignments, return_counts = True)
+        assert np.all(counts >= MIN_COUNT), \
+            f'Every cluster must have at least {MIN_COUNT} samples to avoid issues with GD on too few samples'
         # store transformed data to run KNN in future timesteps
         self.knn_points[env_index][:self.update_after] = transformed_data
         # store assigned subcontrollers
@@ -278,9 +296,9 @@ class MAC:
         start_time = time.time()
         # persistent data structures need to be indexed by environment/task
         episode_returns, episode_lengths = [0] * self.num_envs, [0] * self.num_envs
-        observations = [self.envs[i].reset() for i in range(self.num_envs)]
+        observations = [self.envs[i].reset()[0] for i in range(self.num_envs)]
 
-        for t in range(total_steps):
+        for t in tqdm(range(total_steps)):
             # Environment interactions for all tasks
             for env_index, env in enumerate(self.envs):
                 # Until start_steps have elapsed, randomly sample actions from a uniform
@@ -307,14 +325,15 @@ class MAC:
 
                 # End of trajectory handling
                 if terminated:
-                    self.logger.log({env.name: {'train': {'episode return': episode_returns[env_index], 
-                                                          'episode length': episode_lengths[env_index]}}})
+                    if self.use_wandb:
+                        self.logger.log({env.name: {'train': {'episode return': episode_returns[env_index], 
+                                                              'episode length': episode_lengths[env_index]}}})
                     observations[env_index], _ = env.reset()
                     episode_returns[env_index], episode_lengths[env_index] = 0, 0
 
-            # Fit clustering methods and retroactively assign subcontrollers
-            if t + 1 == self.update_after:
-                self.start_assigning_subcontrollers(env_index)
+                # Fit clustering methods and retroactively assign subcontrollers
+                if t + 1 == self.update_after:
+                    self.start_assigning_subcontrollers(env_index)
 
             # Backprop
             if t >= self.update_after and t % self.update_every == 0:
@@ -326,12 +345,13 @@ class MAC:
                 epoch = (t + 1) // self.steps_per_epoch
 
                 # Save the model
-                if (epoch % self.save_freq == 0) or (epoch == self.num_epochs):
+                if ((epoch % self.save_freq == 0) or (epoch == self.num_epochs)) and self.use_wandb:
                     torch.save(self.ac.state_dict(), 'temp/model.pt')
                     self.logger.log_artifact('temp/model.pt', name = f"{self.exp_name}_epoch_{epoch}.pt")
 
                 # Test the performance of the deterministic version of the agent
                 for env_index in range(self.num_envs):
                     self.test_agent(self.test_envs[env_index], env_index)
-                self.logger.log({'epoch_time': time.time() - start_time})
+                if self.use_wandb:
+                    self.logger.log({'epoch_time': time.time() - start_time})
                 start_time = time.time()

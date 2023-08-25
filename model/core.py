@@ -67,7 +67,11 @@ class SquashedGaussianMLPActor(nn.Module):
         self.act_limit = torch.tensor(act_limit)
 
     def forward(self, obs, deterministic = False, with_logprob = True):
+        if torch.any(torch.isnan(obs)):
+            print('obs', obs)
         net_out = self.net(obs)
+        if torch.any(torch.isnan(net_out)):
+            print('net_out', net_out)
         mu = self.mu_layer(net_out)
         log_std = self.log_std_layer(net_out)
         log_std = torch.clamp(log_std, LOG_STD_MIN, LOG_STD_MAX)
@@ -183,7 +187,7 @@ class MultiActorCritic(nn.Module):
         observations = self.expand_observation(observations) # s x n x o (candidates is s x n x a)
         q1_vals = self.q1s[env_index](observations, candidates) # s x n
         q2_vals = self.q2s[env_index](observations, candidates) # s x n
-        logits = torch.min(torch.stack((q1_vals, q2_vals)), dim = 0) # s x n
+        logits, _ = torch.min(torch.stack((q1_vals, q2_vals)), dim = 0) # s x n
         if deterministic:
             return torch.argmax(logits, dim = 0) # n,
         else:
@@ -243,7 +247,7 @@ class SubcontrollerReplayBuffer(ReplayBuffer):
     '''An extension of the ReplayBuffer that also stores the index of the subcontroller that is used'''
 
     def __init__(self, obs_dim, act_dim, num_subcontrollers, size):
-        super().__init__(self, obs_dim, act_dim, size)
+        super().__init__(obs_dim, act_dim, size)
         self.subcontroller_index_buffer = np.zeros(size, dtype = np.int16)
         # the ith element is a list containing the indices of the environment steps where the ith subcontroller was used
         self.steps_by_subcontroller = [[] for _ in range(num_subcontrollers)]
@@ -251,7 +255,7 @@ class SubcontrollerReplayBuffer(ReplayBuffer):
     def store(self, observation, action, reward, next_observation, terminated, subcontroller_index):
         # special case for early steps where we aren't assigning subcontrollers yet
         if subcontroller_index == -1:
-            super().store(self, observation, action, reward, next_observation, terminated)
+            super().store(observation, action, reward, next_observation, terminated)
             return
 
         # we're overwriting old data if the buffer's full, so we should update the subcontroller records accordingly
@@ -261,10 +265,10 @@ class SubcontrollerReplayBuffer(ReplayBuffer):
         self.subcontroller_index_buffer[self.ptr] = subcontroller_index
         self.steps_by_subcontroller[subcontroller_index].append(self.ptr)
         # N.B. the super call must come after the subcontroller logic because the super call will increment the ptr
-        super().store(self, observation, action, reward, next_observation, terminated)
+        super().store(observation, action, reward, next_observation, terminated)
 
     def sample_q_batch(self, batch_size = 32):
-        return super().sample_batch(self, batch_size = batch_size)
+        return super().sample_batch(batch_size = batch_size)
 
     def sample_pi_batch(self, subcontroller_index, batch_size):
         if batch_size == 0:
