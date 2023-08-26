@@ -7,6 +7,12 @@ from gymnasium.spaces import Tuple, Box, Discrete
 
 from envs import BaseArmEnv
 
+MIN_PROB = torch.tensor(1e-12) 
+
+# lower bound probability to avoid issues from computing the log of 0
+def clamp_prob(inp):
+    return torch.clamp(inp, min = MIN_PROB)
+
 def KNN(data, labels, new_point, k):
     dists = np.linalg.norm(data - new_point, axis = 1)
     top_idxs = np.argsort(dists)[:k]
@@ -85,7 +91,7 @@ class SquashedGaussianMLPActor(nn.Module):
 
         with torch.no_grad():
             r = 0.5 if deterministic else torch.rand_like(p)
-            discrete_action = (r < p).int() # sample 1 with probability p
+            discrete_action = r < p # sample 1 with probability p
 
         if with_logprob:
             # Compute logprob from Gaussian, and then apply correction for Tanh squashing.
@@ -95,12 +101,12 @@ class SquashedGaussianMLPActor(nn.Module):
             # Try deriving it yourself as a (very difficult) exercise. :)
             logp_pi = continuous_dist.log_prob(continuous_action).sum(axis = -1)
             logp_pi -= 2 * (np.log(2) - continuous_action - F.softplus(-2 * continuous_action)).sum(axis = 1)
-            logp_discrete = discrete_action * torch.log(p) + (1 - discrete_action) * torch.log(1 - p)
+            logp_discrete = torch.where(discrete_action, torch.log(clamp_prob(p)), torch.log(clamp_prob(1 - p)))
             logp_pi += torch.squeeze(logp_discrete, dim = -1)
         else:
             logp_pi = None
         continuous_action = self.act_limit * torch.tanh(continuous_action)
-        return torch.cat((continuous_action, discrete_action), dim = -1), logp_pi
+        return torch.cat((continuous_action, discrete_action.int()), dim = -1), logp_pi
 
 
 class MLPQFunction(nn.Module):

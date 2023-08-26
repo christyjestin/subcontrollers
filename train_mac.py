@@ -27,6 +27,7 @@ def main():
     mac = MAC(env_fns = env_fns, exp_name = args.exp_name, num_subcontrollers = args.num_subcontrollers, 
               use_wandb = args.use_wandb, num_epochs = args.num_epochs, gamma = args.gamma, seed = args.seed, 
               ac_kwargs = {'hidden_sizes': [args.hidden_size] * args.num_layers})
+    print('Starting run...')
     mac.run()
 
 if __name__ == '__main__':

@@ -12,8 +12,7 @@ from tqdm import tqdm
 
 from model.core import *
 
-MIN_COUNT = 40
-NUM_KERNEL_PCA_COMPONENTS = 10
+NUM_KERNEL_PCA_COMPONENTS = 10 # size of latent dimension
 NUM_NEIGHBORS = 9 # k for kNN
 
 class MAC:
@@ -207,7 +206,7 @@ class MAC:
         self.pi_optimizer.zero_grad()
         for subcontroller_index in range(self.num_subcontrollers):
             # give more weight to envs that use the subcontroller more often; this sampling scheme is equivalent (in
-            # probability) to directly drawing from all environment steps that use the subcontroller (across tasks)
+            # probability) to directly drawing from all environment steps that use the subcontroller (across all tasks)
             env_probs = sum_to_one([buffer.num_steps(subcontroller_index) for buffer in self.replay_buffers])
             # number of samples to take from each environment
             batch_sizes = np.random.multinomial(self.batch_size, pvals = env_probs)
@@ -281,9 +280,6 @@ class MAC:
         # run clustering algorithm
         HAC = AgglomerativeClustering(n_clusters = self.num_subcontrollers, linkage = 'ward', compute_full_tree = False)
         assignments = HAC.fit_predict(transformed_data)
-        _, counts = np.unique(assignments, return_counts = True)
-        assert np.all(counts >= MIN_COUNT), \
-            f'Every cluster must have at least {MIN_COUNT} samples to avoid issues with GD on too few samples'
         # store transformed data to run KNN in future timesteps
         self.knn_points[env_index][:self.update_after] = transformed_data
         # store assigned subcontrollers
@@ -299,11 +295,15 @@ class MAC:
         observations = [self.envs[i].reset()[0] for i in range(self.num_envs)]
 
         for t in tqdm(range(total_steps)):
+            if t == self.start_steps:
+                print('Finished exploration')
+            elif t == self.update_after:
+                print('Started assigning subcontrollers and backpropagating')
             # Environment interactions for all tasks
             for env_index, env in enumerate(self.envs):
                 # Until start_steps have elapsed, randomly sample actions from a uniform
                 # distribution for better exploration. Afterwards, use the learned policy.
-                if t > self.start_steps:
+                if t >= self.start_steps:
                     action, subcontroller_index = self.get_action(observations[env_index], env_index)
                 else:
                     action = env.action_space.sample()
