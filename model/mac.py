@@ -140,6 +140,8 @@ class MAC:
         self.knn_points = [np.zeros((self.start_steps, NUM_KERNEL_PCA_COMPONENTS), dtype = np.float32)
                            for _ in range(self.num_envs)]
 
+        self.test_subcontroller_counts = [[0] * self.num_subcontrollers for _ in range(self.num_envs)]
+
     def compute_q_loss(self, data, task_index):
         observation, action, reward, next_observation, terminated = data['observation'], data['action'], \
                                                 data['reward'], data['next_observation'], data['terminated']
@@ -239,18 +241,18 @@ class MAC:
     def test_agent(self, env, env_index):
         for _ in range(self.num_test_episodes):
             (observation, _), terminated, episode_return, episode_length = env.reset(), False, 0, 0
-            subcontroller_counts = [0] * self.num_subcontrollers
             while not terminated:
                 # Take deterministic actions at test time
                 action, subcontroller_index = self.get_action(observation, env_index, deterministic = True)
-                subcontroller_counts[subcontroller_index] += 1
+                self.test_subcontroller_counts[env_index][subcontroller_index] += 1
                 observation, reward, terminated, _, _ = env.step(action)
                 episode_return += reward
                 episode_length += 1
             if self.use_wandb:
+                count_dict = {i: v for i, v in enumerate(self.test_subcontroller_counts[env_index])}
                 self.logger.log({env.name: {'test': {'episode return': episode_return, 
                                                      'episode length': episode_length, 
-                                                     'subcontroller_counts': subcontroller_counts}}})
+                                                     'subcontroller_counts': count_dict}}})
 
     # We assign a subcontroller for the new observation in two steps:
     # 1. Apply a nonlinear transformation to reduce the dimensionality of the observation
@@ -272,6 +274,7 @@ class MAC:
     # 1. Fit a nonlinear transformation by running Kernel PCA on initial observations
     # 2. Run a clustering algorithm to produce initial subcontroller assignments for observations
     # 3. Save these assignments to use in the KNN classification scheme for later observations
+    # this function also returns a list containing the counts for each subcontroller
     def start_assigning_subcontrollers(self, env_index):
         # standardize and run kernel PCA to apply a nonlinear transformation to observations
         data = self.replay_buffers[env_index].observation_buffer[:self.update_after]
@@ -286,13 +289,17 @@ class MAC:
         self.replay_buffers[env_index].subcontroller_index_buffer[:self.update_after] = assignments
         for i, v in enumerate(assignments):
             self.replay_buffers[env_index].steps_by_subcontroller[v].append(i)
+        _, counts = np.unique(assignments, return_counts = True)
+        return counts
 
     def run(self):
         total_steps = self.steps_per_epoch * self.num_epochs
         start_time = time.time()
         # persistent data structures need to be indexed by environment/task
         episode_returns, episode_lengths = [0] * self.num_envs, [0] * self.num_envs
+        train_subcontroller_counts = [[0] * self.num_subcontrollers for _ in range(self.num_envs)]
         observations = [self.envs[i].reset()[0] for i in range(self.num_envs)]
+        clean_exp_name = '_'.join(self.exp_name.split()) # replace spaces with underscores
 
         for t in tqdm(range(total_steps)):
             if t == self.start_steps:
@@ -305,6 +312,7 @@ class MAC:
                 # distribution for better exploration. Afterwards, use the learned policy.
                 if t >= self.start_steps:
                     action, subcontroller_index = self.get_action(observations[env_index], env_index)
+                    train_subcontroller_counts[env_index][subcontroller_index] += 1
                 else:
                     action = env.action_space.sample()
                     # can't assign a subcontroller until we've fit our clustering methods
@@ -326,16 +334,18 @@ class MAC:
                 # End of trajectory handling
                 if terminated:
                     if self.use_wandb:
+                        count_dict = {i: v for i, v in enumerate(train_subcontroller_counts[env_index])}
                         self.logger.log({env.name: {'train': {'episode return': episode_returns[env_index], 
-                                                              'episode length': episode_lengths[env_index]}}})
+                                                              'episode length': episode_lengths[env_index], 
+                                                              'subcontroller_counts': count_dict}}})
                     observations[env_index], _ = env.reset()
                     episode_returns[env_index], episode_lengths[env_index] = 0, 0
 
                 # Fit clustering methods and retroactively assign subcontrollers
                 if t + 1 == self.update_after:
-                    self.start_assigning_subcontrollers(env_index)
+                    train_subcontroller_counts[env_index] = self.start_assigning_subcontrollers(env_index)
 
-            # Backprop
+            # Backprop (happens outside of the environment loop i.e. all environments backprop together)
             if t >= self.update_after and t % self.update_every == 0:
                 for _ in range(self.update_every):
                     self.update()
@@ -347,7 +357,7 @@ class MAC:
                 # Save the model
                 if ((epoch % self.save_freq == 0) or (epoch == self.num_epochs)) and self.use_wandb:
                     torch.save(self.ac.state_dict(), 'temp/model.pt')
-                    self.logger.log_artifact('temp/model.pt', name = f"{self.exp_name}_epoch_{epoch}.pt")
+                    self.logger.log_artifact('temp/model.pt', name = f"{clean_exp_name}_epoch_{epoch}.pt")
 
                 # Test the performance of the deterministic version of the agent
                 for env_index in range(self.num_envs):
