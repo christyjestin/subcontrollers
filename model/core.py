@@ -177,7 +177,7 @@ class MultiActorCritic(nn.Module):
         observation = torch.unsqueeze(observation, dim = 0)
         # sample candidate actions from all subcontrollers
         candidates = torch.stack([pi(observation, deterministic, with_logprob = False)[0] for pi in self.pis])
-        subcontroller_index = self.select_subcontroller(observation, env_index, candidates, deterministic)[0]
+        subcontroller_index = self.select_subcontroller(observation, env_index, candidates, deterministic)[0].item()
         action = candidates[subcontroller_index, 0]
         continuous_action, discrete_action = torch.split(action, self.action_split) # package the chosen action
         return (continuous_action.numpy(), discrete_action.bool()[0].item()), subcontroller_index

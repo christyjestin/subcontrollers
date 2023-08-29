@@ -226,8 +226,10 @@ class BaseArmEnv(MujocoEnv):
         return self.check_for_collision('fist_geom', 'ball_geom')
 
     @property
-    def name(self):
-        return self.__class__.__name__
+    def task(self):
+        env_name = self.__class__.__name__
+        assert env_name[-3:] == 'Env'
+        return env_name[:-3].lower()
 
     # logic is dependent on the environment
     def handle_fist(self, close_fist):

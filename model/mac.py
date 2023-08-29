@@ -6,7 +6,7 @@ from torch.optim import Adam
 from sklearn.decomposition import KernelPCA
 from sklearn.cluster import AgglomerativeClustering
 from sklearn.preprocessing import StandardScaler
-import time
+import os, time
 import wandb
 from tqdm import tqdm
 
@@ -14,6 +14,7 @@ from model.core import *
 
 NUM_KERNEL_PCA_COMPONENTS = 10 # size of latent dimension
 NUM_NEIGHBORS = 9 # k for kNN
+SAVE_DIR = 'temp' # directory for temporarily saving the model
 
 class MAC:
     """
@@ -87,7 +88,7 @@ class MAC:
                  update_every = 50, num_test_episodes = 10, save_freq = 1, use_wandb = False):
         self.num_envs = len(env_fns)
         self.num_subcontrollers = num_subcontrollers
-        self.exp_name = exp_name
+        self.exp_name = '_'.join(exp_name.split()) # replace spaces with underscores
         self.steps_per_epoch = steps_per_epoch
         self.num_epochs = num_epochs
         self.gamma = gamma
@@ -250,7 +251,7 @@ class MAC:
                 episode_length += 1
             if self.use_wandb:
                 count_dict = {i: v for i, v in enumerate(self.test_subcontroller_counts[env_index])}
-                self.logger.log({env.name: {'test': {'episode return': episode_return, 
+                self.logger.log({env.task: {'test': {'episode return': episode_return, 
                                                      'episode length': episode_length, 
                                                      'subcontroller_counts': count_dict}}})
 
@@ -292,6 +293,11 @@ class MAC:
         _, counts = np.unique(assignments, return_counts = True)
         return counts
 
+    # Saves a model as a WandB artifact; creates a local temp file in the process
+    def save(self, model, filename, epoch):
+        torch.save(model.state_dict(), f'{SAVE_DIR}/{filename}.pt')
+        self.logger.log_artifact(f'{SAVE_DIR}/{filename}.pt', name = f"{filename}_from_{self.exp_name}_epoch_{epoch}.pt")
+
     def run(self):
         total_steps = self.steps_per_epoch * self.num_epochs
         start_time = time.time()
@@ -299,7 +305,6 @@ class MAC:
         episode_returns, episode_lengths = [0] * self.num_envs, [0] * self.num_envs
         train_subcontroller_counts = [[0] * self.num_subcontrollers for _ in range(self.num_envs)]
         observations = [self.envs[i].reset()[0] for i in range(self.num_envs)]
-        clean_exp_name = '_'.join(self.exp_name.split()) # replace spaces with underscores
 
         for t in tqdm(range(total_steps)):
             if t == self.start_steps:
@@ -335,7 +340,7 @@ class MAC:
                 if terminated:
                     if self.use_wandb:
                         count_dict = {i: v for i, v in enumerate(train_subcontroller_counts[env_index])}
-                        self.logger.log({env.name: {'train': {'episode return': episode_returns[env_index], 
+                        self.logger.log({env.task: {'train': {'episode return': episode_returns[env_index], 
                                                               'episode length': episode_lengths[env_index], 
                                                               'subcontroller_counts': count_dict}}})
                     observations[env_index], _ = env.reset()
@@ -356,8 +361,18 @@ class MAC:
 
                 # Save the model
                 if ((epoch % self.save_freq == 0) or (epoch == self.num_epochs)) and self.use_wandb:
-                    torch.save(self.ac.state_dict(), 'temp/model.pt')
-                    self.logger.log_artifact('temp/model.pt', name = f"{clean_exp_name}_epoch_{epoch}.pt")
+                    # clear directory first
+                    for file in os.listdir(SAVE_DIR):
+                        os.remove(f'{SAVE_DIR}/{file}')
+
+                    tasks = [env.task for env in self.envs]
+                    task_string = "_".join(tasks)
+                    for i, pi in enumerate(self.ac.pis):
+                        self.save(pi, f'pi_{i}_trained_on_{task_string}', epoch)
+                    for task, q1 in zip(tasks, self.ac.q1s):
+                        self.save(q1, f'{task}_q1', epoch)
+                    for task, q2 in zip(tasks, self.ac.q2s):
+                        self.save(q2, f'{task}_q2', epoch)
 
                 # Test the performance of the deterministic version of the agent
                 for env_index in range(self.num_envs):
