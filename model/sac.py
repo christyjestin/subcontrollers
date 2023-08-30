@@ -33,7 +33,7 @@ class SAC:
             The action method should output a single action and is not meant for batch computation: this is because of \
             a final packaging step that makes the action compatible with our Gym environments.
 
-        ac_kwargs (dict): Any kwargs appropriate for the ActorCritic object you provided to SAC.
+        ac_kwargs (dict): Any kwargs appropriate for the VanillaActorCritic object you provided to SAC.
 
         seed (int): Seed for random number generators.
 
@@ -76,7 +76,6 @@ class SAC:
                  steps_per_epoch = 4000, num_epochs = 100, replay_size = int(1e6), gamma = 0.99, polyak = 0.995, 
                  lr = 1e-3, alpha = 0.2, batch_size = 100, start_steps = 10000, update_after = 1000, 
                  update_every = 50, num_test_episodes = 10, save_freq = 1):
-
         self.steps_per_epoch = steps_per_epoch
         self.num_epochs = num_epochs
         self.gamma = gamma
@@ -93,12 +92,15 @@ class SAC:
 
         torch.manual_seed(seed)
         np.random.seed(seed)
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        print("Using device: ", self.device)
 
         self.env, self.test_env = env_fn(), env_fn()
         obs_dim = get_space_dim(self.env.observation_space)
         act_dim = get_space_dim(self.env.action_space)
 
         self.ac = actor_critic(self.env.observation_space, self.env.action_space, **ac_kwargs)
+        self.ac.to(self.device)
         self.ac_targ = deepcopy(self.ac)
 
         # Freeze target networks with respect to optimizers (only update via polyak averaging)
@@ -106,7 +108,7 @@ class SAC:
             p.requires_grad = False
 
         self.q_params = itertools.chain(self.ac.q1.parameters(), self.ac.q2.parameters())
-        self.replay_buffer = ReplayBuffer(obs_dim = obs_dim, act_dim = act_dim, size = replay_size)
+        self.replay_buffer = ReplayBuffer(obs_dim, act_dim, replay_size, self.device)
         counts = tuple(count_vars(module) for module in [self.ac.pi, self.ac.q1, self.ac.q2])
         self.logger.alert(title = 'Number of parameters', text = f'pi:{counts[0]}, q1: {counts[1]}, q2: {counts[2]}', 
                           level = 'INFO')
@@ -138,7 +140,7 @@ class SAC:
         loss_q2 = ((q2 - backup) ** 2).mean()
         loss_q = loss_q1 + loss_q2
 
-        q_info = dict(Q1Vals = q1.detach().numpy(), Q2Vals = q2.detach().numpy()) # Useful info for logging
+        q_info = dict(Q1Vals = q1.detach().cpu().numpy(), Q2Vals = q2.detach().cpu().numpy()) # Useful info for logging
         return loss_q, q_info
 
     def compute_pi_loss(self, data):
@@ -149,7 +151,7 @@ class SAC:
         q_pi = torch.min(q1_pi, q2_pi)
         # Entropy-regularized policy loss
         loss_pi = (self.alpha * logprob_pi - q_pi).mean()
-        pi_info = dict(LogPi = logprob_pi.detach().numpy()) # Useful info for logging
+        pi_info = dict(LogPi = logprob_pi.detach().cpu().numpy()) # Useful info for logging
         return loss_pi, pi_info
 
     def update(self, data):
@@ -184,7 +186,8 @@ class SAC:
                 p_targ.data.add_((1 - self.polyak) * p.data)
 
     def get_action(self, observation, deterministic = False):
-        return self.ac.action(torch.as_tensor(as_vector(observation), dtype = torch.float32), deterministic)
+        observation = torch.as_tensor(as_vector(observation), dtype = torch.float32, device = self.device)
+        return self.ac.action(observation, deterministic)
 
     def test_agent(self):
         for _ in range(self.num_test_episodes):

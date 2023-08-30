@@ -72,12 +72,13 @@ class SquashedGaussianMLPActor(nn.Module):
         self.sigmoid = nn.Sigmoid()
         self.act_limit = torch.tensor(act_limit)
 
+    # override function to ensure that all tensors get moved
+    def to(self, device):
+        super().to(device)
+        self.act_limit = self.act_limit.to(device)
+
     def forward(self, obs, deterministic = False, with_logprob = True):
-        if torch.any(torch.isnan(obs)):
-            print('obs', obs)
         net_out = self.net(obs)
-        if torch.any(torch.isnan(net_out)):
-            print('net_out', net_out)
         mu = self.mu_layer(net_out)
         log_std = self.log_std_layer(net_out)
         log_std = torch.clamp(log_std, LOG_STD_MIN, LOG_STD_MAX)
@@ -139,7 +140,7 @@ class VanillaActorCritic(nn.Module):
     def action(self, observation, deterministic = False):
         action, _ = self.pi(observation, deterministic, with_logprob = False)
         continuous_action, discrete_action = torch.split(action, self.action_split)
-        return (continuous_action.numpy(), discrete_action.bool()[0].item())
+        return (continuous_action.cpu().numpy(), discrete_action.bool()[0].item())
 
 
 class MultiActorCritic(nn.Module):
@@ -164,6 +165,10 @@ class MultiActorCritic(nn.Module):
         self.q1s = [MLPQFunction(self.obs_dim, self.act_dim, hidden_sizes, activation) for _ in range(num_envs)]
         self.q2s = [MLPQFunction(self.obs_dim, self.act_dim, hidden_sizes, activation) for _ in range(num_envs)]
 
+    def to(self, device):
+        for module in (self.pis + self.q1s + self.q2s):
+            module.to(device)
+
     # expand an observation to have an extra initial dimension of size num_subcontrollers
     # this is meant to align the shape of observations and candidate actions
     def expand_observation(self, obs):
@@ -180,7 +185,7 @@ class MultiActorCritic(nn.Module):
         subcontroller_index = self.select_subcontroller(observation, env_index, candidates, deterministic)[0].item()
         action = candidates[subcontroller_index, 0]
         continuous_action, discrete_action = torch.split(action, self.action_split) # package the chosen action
-        return (continuous_action.numpy(), discrete_action.bool()[0].item()), subcontroller_index
+        return (continuous_action.cpu().numpy(), discrete_action.bool()[0].item()), subcontroller_index
 
     @torch.no_grad() # use q values as logits to select a subcontroller based on proposed actions
     def select_subcontroller(self, observations, env_index, candidates, deterministic = False):
@@ -220,13 +225,14 @@ class ReplayBuffer:
     terminated episodes because our environments do not truncate.
     """
 
-    def __init__(self, obs_dim, act_dim, size):
+    def __init__(self, obs_dim, act_dim, size, device):
         self.observation_buffer = np.zeros(get_combined_shape(size, obs_dim), dtype = np.float32)
         self.next_observation_buffer = np.zeros(get_combined_shape(size, obs_dim), dtype = np.float32)
         self.action_buffer = np.zeros(get_combined_shape(size, act_dim), dtype = np.float32)
         self.reward_buffer = np.zeros(size, dtype = np.float32)
         self.terminated_buffer = np.zeros(size, dtype = np.float32)
         self.ptr, self.size, self.max_size = 0, 0, size
+        self.device = device
 
     def store(self, observation, action, reward, next_observation, terminated):
         self.observation_buffer[self.ptr] = observation
@@ -246,14 +252,14 @@ class ReplayBuffer:
                      action = self.action_buffer[idxs], 
                      reward = self.reward_buffer[idxs], 
                      terminated = self.terminated_buffer[idxs])
-        return {k: torch.as_tensor(v, dtype = torch.float32) for k, v in batch.items()}
+        return {k: torch.as_tensor(v, dtype = torch.float32, device = self.device) for k, v in batch.items()}
 
 
 class SubcontrollerReplayBuffer(ReplayBuffer):
     '''An extension of the ReplayBuffer that also stores the index of the subcontroller that is used'''
 
-    def __init__(self, obs_dim, act_dim, num_subcontrollers, size):
-        super().__init__(obs_dim, act_dim, size)
+    def __init__(self, obs_dim, act_dim, num_subcontrollers, size, device):
+        super().__init__(obs_dim, act_dim, size, device)
         self.subcontroller_index_buffer = np.zeros(size, dtype = np.int16)
         # the ith element is a list containing the indices of the environment steps where the ith subcontroller was used
         self.steps_by_subcontroller = [[] for _ in range(num_subcontrollers)]

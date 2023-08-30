@@ -18,7 +18,7 @@ SAVE_DIR = 'temp' # directory for temporarily saving the model
 
 class MAC:
     """
-    Multi Actor-Critic (SAC)
+    Multi Actor-Critic (MAC)
     Notes:
         - Entropy
             This implementation only considers the entropy of each subcontroller individually, rather than the overall \
@@ -40,7 +40,7 @@ class MAC:
             in ``pis``, ``q1s``, ``q2s``. Each member of the lists should match the spec for their respective module type \
             given in the ``SAC`` class. The ``action`` method also matches the spec given in ``SAC``.
 
-        ac_kwargs (dict): Any kwargs appropriate for the ActorCritic object you provided to SAC.
+        ac_kwargs (dict): Any kwargs appropriate for the MultiActorCritic object you provided to MAC.
 
         seed (int): Seed for random number generators.
 
@@ -107,10 +107,13 @@ class MAC:
 
         torch.manual_seed(seed)
         np.random.seed(seed)
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        print("Using device: ", self.device)
 
         self.envs, self.test_envs = [env_fn() for env_fn in env_fns], [env_fn() for env_fn in env_fns]
 
         self.ac = actor_critic(self.envs, self.num_subcontrollers, **ac_kwargs)
+        self.ac.to(self.device) # need to use custom method because of the structure of MultiActorCritic
         self.ac_targ = deepcopy(self.ac)
 
         # Freeze target networks with respect to optimizers (only update via polyak averaging)
@@ -122,7 +125,7 @@ class MAC:
         obs_dim = get_space_dim(self.envs[0].observation_space)
         act_dim = get_space_dim(self.envs[0].action_space)
         # Each environment has its own buffer
-        self.replay_buffers = [SubcontrollerReplayBuffer(obs_dim, act_dim, self.num_subcontrollers, replay_size) 
+        self.replay_buffers = [SubcontrollerReplayBuffer(obs_dim, act_dim, num_subcontrollers, replay_size, self.device)
                                 for _ in range(self.num_envs)]
         counts = tuple(count_vars(module) for module in [*self.ac.pis, *self.ac.q1s, *self.ac.q2s])
         if self.use_wandb:
@@ -167,7 +170,8 @@ class MAC:
         loss_q = loss_q1 + loss_q2
 
         # Useful info for logging
-        q_info = {f'Q1Vals ({task_index})': q1.detach().numpy(), f'Q2Vals ({task_index})': q2.detach().numpy()}
+        q_info = {f'Q1Vals ({task_index})': q1.detach().cpu().numpy(), 
+                  f'Q2Vals ({task_index})': q2.detach().cpu().numpy()}
         return loss_q, q_info
 
     def compute_pi_loss(self, subcontroller_index, batches):
@@ -186,7 +190,7 @@ class MAC:
             logprobs.append(logprob)
         loss_pi = torch.cat(loss_vals).mean()
         logprob_pi = torch.cat(logprobs).mean()
-        pi_info = dict(LogPi = logprob_pi.detach().numpy()) # Useful info for logging
+        pi_info = dict(LogPi = logprob_pi.detach().cpu().numpy()) # Useful info for logging
         return loss_pi, pi_info
 
     def update(self):
@@ -237,7 +241,8 @@ class MAC:
                 p_targ.data.add_((1 - self.polyak) * p.data)
 
     def get_action(self, observation, env_index, deterministic = False):
-        return self.ac.action(torch.as_tensor(as_vector(observation), dtype = torch.float32), env_index, deterministic)
+        observation = torch.as_tensor(as_vector(observation), dtype = torch.float32, device = self.device)
+        return self.ac.action(observation, env_index, deterministic)
 
     def test_agent(self, env, env_index):
         for _ in range(self.num_test_episodes):
