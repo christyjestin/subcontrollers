@@ -7,11 +7,11 @@ from gymnasium.spaces import Tuple, Box, Discrete
 
 from envs import BaseArmEnv
 
-MIN_PROB = torch.tensor(1e-12) 
+MIN_PROB = torch.tensor(1e-12)
 
 # lower bound probability to avoid issues from computing the log of 0
 def clamp_prob(inp):
-    return torch.clamp(inp, min = MIN_PROB)
+    return torch.clamp(inp, min = MIN_PROB.to(inp.device))
 
 def KNN(data, labels, new_point, k):
     dists = np.linalg.norm(data - new_point, axis = 1)

@@ -8,7 +8,7 @@ from envs.utils import cosine_similarity
 from envs.constants import *
 
 
-XML_FILE = os.path.realpath("envs\\arm.xml")
+XML_FILE = os.path.realpath(os.path.join('envs', 'arm.xml'))
 
 DEFAULT_CAMERA_CONFIG = {
   "azimuth": 90.0,
