@@ -62,4 +62,4 @@ class ThrowEnv(BaseArmEnv):
 
     # reward is only received at the perigee (i.e. right before the episode terminates)
     def reward(self, changed_fist):
-        return (0.01 / self.ball_to_target_distance) if (self.released and self.at_perigee) else 0
+        return (0.001 / (self.ball_to_target_distance ** 2)) if (self.released and self.at_perigee) else 0

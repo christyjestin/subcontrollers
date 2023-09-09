@@ -315,7 +315,7 @@ class BaseArmEnv(MujocoEnv):
         bools = [self.ball_in_hand, self.closed_fist]
         assert None not in bools, f"Uninitialized variable: ball_in_hand, closed_fist = {bools}"
         control, close_fist = action
-        changed_fist = (self.closed_fist == close_fist)
+        changed_fist = (self.closed_fist != close_fist)
         self.do_simulation(control, self.frame_skip)
 
         self.handle_fist(close_fist)
