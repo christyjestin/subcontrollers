@@ -94,7 +94,7 @@ class BaseArmEnv(MujocoEnv):
         self._ball_in_hand = None
 
         self._ctrl_cost_weight = 1
-        self._change_fist_weight = 1
+        self._change_fist_weight = 5
         self._reward_weight = reward_weight
 
         self._launch_point_pos = self.model.body('launch_point').pos
@@ -113,7 +113,10 @@ class BaseArmEnv(MujocoEnv):
         changed_fist_cost = self._change_fist_weight * changed_fist
         return (ctrl_cost, changed_fist_cost, ctrl_cost + changed_fist_cost)
 
-    def reward(self, close_fist):
+    def sample_random_action(self):
+        return self.action_space.sample()
+
+    def reward(self, changed_fist):
         '''Evaluates a reward function that is dependent on the environment'''
         raise NotImplementedError
 
@@ -178,7 +181,7 @@ class BaseArmEnv(MujocoEnv):
     def ball_in_hand(self, val):
         assert isinstance(val, bool)
         self._ball_in_hand = val
-        self.model.eq_active[0] = self._ball_in_hand
+        self.model.eq_active[0] = self._ball_in_hand # activate weld constraint that places the ball in the hand
 
     @property # getter and setter to ensure the side effect of repositioning the target
     def target_pos(self):
@@ -318,12 +321,12 @@ class BaseArmEnv(MujocoEnv):
         self.handle_fist(close_fist)
         self.handle_fist_appearance()
         observation = self._get_obs()
-        rewards = self._reward_weight * self.reward(close_fist)
+        rewards = self._reward_weight * self.reward(changed_fist)
         ctrl_cost, changed_fist_cost, total_cost = self.control_cost(control, changed_fist)
         net_reward = rewards - total_cost
         terminated = self.should_terminate() or self.invalid_position() or self.stuck(observation)
         truncated = False
-        info = {'rewards': rewards, 'control': ctrl_cost, 'changing_fist': changed_fist_cost, 'total': total_cost}
+        info = {'rewards': rewards, 'control': ctrl_cost, 'changing_fist': changed_fist_cost, 'total_cost': total_cost}
 
         if self.render_mode == "human":
             self.render()

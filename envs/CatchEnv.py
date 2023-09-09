@@ -29,6 +29,12 @@ class CatchEnv(BaseArmEnv):
         super().__init__(reward_weight = 0.3, render_mode = render_mode)
         self.hide('target') # target is irrelevant for the catching task
 
+    # custom sample function that makes the robot less likely to try to grab the ball
+    def sample_random_action(self):
+        continuous, _ = self.action_space.sample()
+        discrete = bool(np.random.rand() < 0.25) # close fist with prob 0.25
+        return (continuous, discrete)
+
     # note the episode terminates immediately after a catch so you can't let go in CatchEnv
     def handle_fist(self, close_fist):
         self.check_for_grab(close_fist)
@@ -57,6 +63,6 @@ class CatchEnv(BaseArmEnv):
         return self._get_obs()
 
     # reward grasp attempts that are closer to the ball
-    def reward(self, close_fist):
+    def reward(self, changed_fist):
         bonus = self.BALL_IN_HAND_BONUS * self.ball_in_hand
-        return (bonus + (1 / self.ball_to_fist_distance)) if close_fist else 0
+        return (bonus + (1 / self.ball_to_fist_distance)) if changed_fist else 0

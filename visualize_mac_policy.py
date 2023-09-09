@@ -2,6 +2,7 @@ import argparse
 import torch
 import os
 import matplotlib as mpl
+from tabulate import tabulate
 
 from envs import *
 from model import MultiActorCritic
@@ -9,9 +10,9 @@ from model.core import as_vector
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--task', action = 'store', choices = ['throw', 'catch', 'set'], required = True)
-parser.add_argument('--num_subcontrollers', action = 'store', required = True, type = int)
-parser.add_argument('--critic_dir', action = 'store', required = True)
-parser.add_argument('--actor_dir', action = 'store', required = True)
+parser.add_argument('--num_subcontrollers', action = 'store', type = int, default = 8)
+parser.add_argument('--critic_dir', action = 'store', default = 'temp/')
+parser.add_argument('--actor_dir', action = 'store', default = 'temp')
 parser.add_argument('--hidden_size', type = int, default = 256)
 parser.add_argument('--num_layers', type = int, default = 2)
 parser.add_argument('--deterministic', action = 'store_true')
@@ -57,17 +58,26 @@ def main(task, num_subcontrollers, critic_dir, actor_dir, hidden_sizes, determin
     print(f'The current policy is {"" if deterministic else "non-"}deterministic')
     episode_length, total_reward = 0, 0
     observation, _ = env.reset()
+    rewards = []
+    info_logs = []
     for _ in range(1000):
         obs = torch.as_tensor(as_vector(observation), dtype = torch.float32)
         action, subcontroller_index = model.action(obs, env_index = 0, deterministic = deterministic)
         env.model.geom('subcontroller_indicator_geom').rgba = cmap(subcontroller_index, num_subcontrollers)
-        observation, net_reward, terminated, _, _ = env.step(action)
+        observation, net_reward, terminated, _, info = env.step(action)
+        rewards.append(net_reward)
+        info_logs.append(info)
         total_reward += net_reward
         episode_length += 1
         if terminated:
             print(f"The total reward for this episode is {total_reward}, and the episode length is {episode_length}")
             for _ in range(5):
                 env.passive_step()
+            print(tabulate([[*info.values(), reward] for info, reward in zip(info_logs, rewards)], 
+                           headers = ['rewards', 'control', 'changing_fist', 'total_cost', 'net']))
+            input("Press Enter to Continue")
+            rewards = []
+            info_logs = []
             episode_length, total_reward = 0, 0
             observation, _ = env.reset()
     env.close()

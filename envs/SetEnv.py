@@ -61,5 +61,5 @@ class SetEnv(BaseArmEnv):
         return self._get_obs()
 
     # reward is only received at the perigee (i.e. right before the episode terminates)
-    def reward(self, close_fist):
+    def reward(self, changed_fist):
         return (1 / self.ball_to_target_distance) if (self.set and self.at_perigee) else 0

@@ -38,6 +38,12 @@ class ThrowEnv(BaseArmEnv):
     def should_terminate(self):
         return self.released and self.at_perigee
 
+    # custom sample function that makes the robot much more likely to hold onto the ball
+    def sample_random_action(self):
+        continuous, _ = self.action_space.sample()
+        discrete = bool(np.random.rand() < 0.9) # close fist with prob 0.9
+        return (continuous, discrete)
+
     def reset_model(self):
         elbow_angle, shoulder_angle, fist_pos = self.arm_random_init()
         ball_pos = fist_pos # ball starts in hand
@@ -55,5 +61,5 @@ class ThrowEnv(BaseArmEnv):
         return self._get_obs()
 
     # reward is only received at the perigee (i.e. right before the episode terminates)
-    def reward(self, close_fist):
-        return (1 / self.ball_to_target_distance) if (self.released and self.at_perigee) else 0
+    def reward(self, changed_fist):
+        return (0.01 / self.ball_to_target_distance) if (self.released and self.at_perigee) else 0

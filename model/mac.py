@@ -324,7 +324,7 @@ class MAC:
                     action, subcontroller_index = self.get_action(observations[env_index], env_index)
                     train_subcontroller_counts[env_index][subcontroller_index] += 1
                 else:
-                    action = env.action_space.sample()
+                    action = env.sample_random_action()
                     # can't assign a subcontroller until we've fit our clustering methods
                     if t >= self.update_after:
                         subcontroller_index = self.assign_subcontroller(env_index, as_vector(observations[env_index]))
