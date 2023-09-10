@@ -256,9 +256,9 @@ class BaseArmEnv(MujocoEnv):
 
     # randomly choose an initial configuration for the arm (has no side effects i.e. state changes)
     def arm_random_init(self):
-        shoulder_angle = np.random.uniform(0, np.pi)
-        elbow_lower_limit = -0.75 * np.pi # 135 degrees on either side for elbow joint
-        elbow_upper_limit = 0.75 * np.pi
+        shoulder_angle = np.random.uniform(1/6 * np.pi, 5/6 * np.pi)
+        elbow_lower_limit = -0.5 * np.pi # 90 degrees on either side for elbow joint
+        elbow_upper_limit = 0.5 * np.pi
         # set elbow limits to avoid ground penetration (the limits aren't perfect because the elbow to fist distance is
         # longer than the upper arm length, but the simulator seems to prevent ground penetration in this edge case)
         # set upper limit if upper arm is to the left and lower limit if upper arm is to the right

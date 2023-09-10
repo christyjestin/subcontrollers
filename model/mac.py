@@ -322,7 +322,6 @@ class MAC:
                 # distribution for better exploration. Afterwards, use the learned policy.
                 if t >= self.start_steps:
                     action, subcontroller_index = self.get_action(observations[env_index], env_index)
-                    train_subcontroller_counts[env_index][subcontroller_index] += 1
                 else:
                     action = env.sample_random_action()
                     # can't assign a subcontroller until we've fit our clustering methods
@@ -330,6 +329,9 @@ class MAC:
                         subcontroller_index = self.assign_subcontroller(env_index, as_vector(observations[env_index]))
                     else:
                         subcontroller_index = -1
+
+                if subcontroller_index != -1:
+                    train_subcontroller_counts[env_index][subcontroller_index] += 1
 
                 next_observation, reward, terminated, _, _ = env.step(action)
                 episode_returns[env_index] += reward
