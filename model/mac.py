@@ -247,7 +247,7 @@ class MAC:
     def test_agent(self, env, env_index):
         for _ in range(self.num_test_episodes):
             (observation, _), terminated, episode_return, episode_length = env.reset(), False, 0, 0
-            while not terminated:
+            while not terminated and episode_length < 1000:
                 # Take deterministic actions at test time
                 action, subcontroller_index = self.get_action(observation, env_index, deterministic = True)
                 self.test_subcontroller_counts[env_index][subcontroller_index] += 1

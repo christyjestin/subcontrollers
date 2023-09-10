@@ -301,7 +301,7 @@ class BaseArmEnv(MujocoEnv):
         assert delta_x < 0, "ball should be moving to the left"
 
         # first choose the duration of the throw and then back out the launch velocity
-        t = np.random.uniform(0.1, 0.8)
+        t = np.random.uniform(0.4, 0.8)
         v_avg = delta_z / t
         v0 = v_avg + 0.5 * g * t # v_avg = v0 - 0.5 * g * t -> v0 = v_avg + 0.5 * g * t
         return delta_x / t, v0
