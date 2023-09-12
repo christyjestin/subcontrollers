@@ -22,7 +22,7 @@ class ThrowEnv(BaseArmEnv):
     '''
 
     def __init__(self, render_mode = None):
-        super().__init__(render_mode = render_mode)
+        super().__init__(reward_weight = 40, render_mode = render_mode)
         self.hide('launch_point')
         self.released = False
 
@@ -63,6 +63,8 @@ class ThrowEnv(BaseArmEnv):
     # reward is only received at the perigee (i.e. right before the episode terminates)
     def reward(self, changed_fist):
         if self.released and self.at_perigee:
+            if self.ball_vel[0] < 0:
+                return -0.8 + self.ball_vel[0] # punishment for throwing in the wrong direction
             return (0.001 / (self.ball_to_target_distance ** 2))
         # punishment to get the arm to actually do something and not just end the episode because it hit the floor
         if self.invalid_position():

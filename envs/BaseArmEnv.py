@@ -168,9 +168,8 @@ class BaseArmEnv(MujocoEnv):
         for being less than the tolerance rather than being close to 0 because we might slightly overshoot the perigee
         and have a small negative value for cos_sim. If this is the case, then we'll also want to immediately terminate.
         '''
-        ball_vel = self.data.qvel[NUM_MOTORS : NUM_MOTORS + 3]
         vec_to_target = self.target_pos - self.ball_pos
-        cos_sim = cosine_similarity(ball_vel, vec_to_target)
+        cos_sim = cosine_similarity(self.ball_vel, vec_to_target)
         return bool(cos_sim < PERIGEE_COSINE_SIMILARITY_TOLERANCE)
 
     @property # getter and setter to ensure the side effect of turning the weld constraint on and off
@@ -206,6 +205,10 @@ class BaseArmEnv(MujocoEnv):
     @property
     def ball_pos(self):
         return self.data.geom('ball_geom').xpos
+
+    @property
+    def ball_vel(self):
+        return self.data.qvel[NUM_MOTORS : NUM_MOTORS + 3]
 
     @property
     def fist_pos(self):
