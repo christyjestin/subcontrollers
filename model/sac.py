@@ -118,8 +118,8 @@ class SAC:
 
 
     def compute_q_loss(self, data):
-        observation, action, reward, next_observation, terminated = data['observation'], data['action'], \
-                                                data['reward'], data['next_observation'], data['terminated']
+        observation, action, reward, next_observation, done = data['observation'], data['action'], \
+                                                data['reward'], data['next_observation'], data['done']
 
         q1 = self.ac.q1(observation, action)
         q2 = self.ac.q2(observation, action)
@@ -133,7 +133,7 @@ class SAC:
             q1_pi_targ = self.ac_targ.q1(next_observation, next_action)
             q2_pi_targ = self.ac_targ.q2(next_observation, next_action)
             q_pi_targ = torch.min(q1_pi_targ, q2_pi_targ)
-            backup = reward + self.gamma * (1 - terminated) * (q_pi_targ - self.alpha * logprob_next_action)
+            backup = reward + self.gamma * (1 - done) * (q_pi_targ - self.alpha * logprob_next_action)
 
         # MSE loss against Bellman backup
         loss_q1 = ((q1 - backup) ** 2).mean()
@@ -191,11 +191,12 @@ class SAC:
 
     def test_agent(self):
         for _ in range(self.num_test_episodes):
-            (observation, _), terminated, episode_return, episode_length = self.test_env.reset(), False, 0, 0
-            while not terminated:
+            (observation, _), done, episode_return, episode_length = self.test_env.reset(), False, 0, 0
+            while not done:
                 # Take deterministic actions at test time
                 action = self.get_action(observation, deterministic = True)
-                observation, reward, terminated, _, _ = self.test_env.step(action)
+                observation, reward, terminated, truncated, _ = self.test_env.step(action)
+                done = terminated or truncated
                 episode_return += reward
                 episode_length += 1
             self.logger.log({'test': {'episode return': episode_return, 'episode length': episode_length}})
@@ -213,18 +214,19 @@ class SAC:
             else:
                 action = self.env.action_space.sample()
 
-            next_observation, reward, terminated, _, _ = self.env.step(action)
+            next_observation, reward, terminated, truncated, _ = self.env.step(action)
+            done = terminated or truncated
             episode_return += reward
             episode_length += 1
 
             self.replay_buffer.store(as_vector(observation), as_vector(action), reward, as_vector(next_observation), 
-                                     terminated)
+                                     done)
 
             # Super critical, easy to overlook step: make sure to update most recent observation!
             observation = next_observation
 
             # End of trajectory handling
-            if terminated:
+            if done:
                 self.logger.log({'train': {'episode return': episode_return, 'episode length': episode_length}})
                 (observation, _), episode_return, episode_length = self.env.reset(), 0, 0
 

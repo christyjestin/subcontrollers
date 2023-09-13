@@ -147,8 +147,8 @@ class MAC:
         self.test_subcontroller_counts = [[0] * self.num_subcontrollers for _ in range(self.num_envs)]
 
     def compute_q_loss(self, data, task_index):
-        observation, action, reward, next_observation, terminated = data['observation'], data['action'], \
-                                                data['reward'], data['next_observation'], data['terminated']
+        observation, action, reward, next_observation, done = data['observation'], data['action'], \
+                                                data['reward'], data['next_observation'], data['done']
 
         q1 = self.ac.q1s[task_index](observation, action)
         q2 = self.ac.q2s[task_index](observation, action)
@@ -162,7 +162,7 @@ class MAC:
             q1_pi_targ = self.ac_targ.q1s[task_index](next_observation, next_action)
             q2_pi_targ = self.ac_targ.q2s[task_index](next_observation, next_action)
             q_pi_targ = torch.min(q1_pi_targ, q2_pi_targ)
-            backup = reward + self.gamma * (1 - terminated) * (q_pi_targ - self.alpha * next_action_logprobs)
+            backup = reward + self.gamma * (1 - done) * (q_pi_targ - self.alpha * next_action_logprobs)
 
         # MSE loss against Bellman backup
         loss_q1 = ((q1 - backup) ** 2).mean()
@@ -246,12 +246,13 @@ class MAC:
 
     def test_agent(self, env, env_index):
         for _ in range(self.num_test_episodes):
-            (observation, _), terminated, episode_return, episode_length = env.reset(), False, 0, 0
-            while not terminated and episode_length < 1000:
+            (observation, _), done, episode_return, episode_length = env.reset(), False, 0, 0
+            while not done:
                 # Take deterministic actions at test time
                 action, subcontroller_index = self.get_action(observation, env_index, deterministic = True)
                 self.test_subcontroller_counts[env_index][subcontroller_index] += 1
-                observation, reward, terminated, _, _ = env.step(action)
+                observation, reward, terminated, truncated, _ = env.step(action)
+                done = terminated or truncated
                 episode_return += reward
                 episode_length += 1
             if self.use_wandb:
@@ -333,18 +334,19 @@ class MAC:
                 if subcontroller_index != -1:
                     train_subcontroller_counts[env_index][subcontroller_index] += 1
 
-                next_observation, reward, terminated, _, _ = env.step(action)
+                next_observation, reward, terminated, truncated, _ = env.step(action)
+                done = terminated or truncated
                 episode_returns[env_index] += reward
                 episode_lengths[env_index] += 1
 
                 self.replay_buffers[env_index].store(as_vector(observations[env_index]), as_vector(action), reward, 
-                                                     as_vector(next_observation), terminated, subcontroller_index)
+                                                     as_vector(next_observation), done, subcontroller_index)
 
                 # Super critical, easy to overlook step: make sure to update most recent observation!
                 observations[env_index] = next_observation
 
                 # End of trajectory handling
-                if terminated:
+                if done:
                     if self.use_wandb:
                         count_dict = {i: v for i, v in enumerate(train_subcontroller_counts[env_index])}
                         self.logger.log({env.task: {'train': {'episode return': episode_returns[env_index], 

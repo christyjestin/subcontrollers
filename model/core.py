@@ -220,9 +220,7 @@ class MultiActorCritic(nn.Module):
 
 class ReplayBuffer:
     """
-    A simple FIFO experience replay buffer for SAC agents. This buffer is based on the latest Gym API
-    which differentiates between terminated and truncated episodes. However, the buffer will only track
-    terminated episodes because our environments do not truncate.
+    A simple FIFO experience replay buffer for SAC agents.
     """
 
     def __init__(self, obs_dim, act_dim, size, device):
@@ -230,16 +228,16 @@ class ReplayBuffer:
         self.next_observation_buffer = np.zeros(get_combined_shape(size, obs_dim), dtype = np.float32)
         self.action_buffer = np.zeros(get_combined_shape(size, act_dim), dtype = np.float32)
         self.reward_buffer = np.zeros(size, dtype = np.float32)
-        self.terminated_buffer = np.zeros(size, dtype = np.float32)
+        self.done_buffer = np.zeros(size, dtype = np.float32)
         self.ptr, self.size, self.max_size = 0, 0, size
         self.device = device
 
-    def store(self, observation, action, reward, next_observation, terminated):
+    def store(self, observation, action, reward, next_observation, done):
         self.observation_buffer[self.ptr] = observation
         self.next_observation_buffer[self.ptr] = next_observation
         self.action_buffer[self.ptr] = action
         self.reward_buffer[self.ptr] = reward
-        self.terminated_buffer[self.ptr] = terminated
+        self.done_buffer[self.ptr] = done
         self.ptr = (self.ptr + 1) % self.max_size
         self.size = min(self.size + 1, self.max_size)
 
@@ -251,7 +249,7 @@ class ReplayBuffer:
                      next_observation = self.next_observation_buffer[idxs], 
                      action = self.action_buffer[idxs], 
                      reward = self.reward_buffer[idxs], 
-                     terminated = self.terminated_buffer[idxs])
+                     done = self.done_buffer[idxs])
         return {k: torch.as_tensor(v, dtype = torch.float32, device = self.device) for k, v in batch.items()}
 
 
@@ -264,10 +262,10 @@ class SubcontrollerReplayBuffer(ReplayBuffer):
         # the ith element is a list containing the indices of the environment steps where the ith subcontroller was used
         self.steps_by_subcontroller = [[] for _ in range(num_subcontrollers)]
 
-    def store(self, observation, action, reward, next_observation, terminated, subcontroller_index):
+    def store(self, observation, action, reward, next_observation, done, subcontroller_index):
         # special case for early steps where we aren't assigning subcontrollers yet
         if subcontroller_index == -1:
-            super().store(observation, action, reward, next_observation, terminated)
+            super().store(observation, action, reward, next_observation, done)
             return
 
         # we're overwriting old data if the buffer's full, so we should update the subcontroller records accordingly
@@ -277,7 +275,7 @@ class SubcontrollerReplayBuffer(ReplayBuffer):
         self.subcontroller_index_buffer[self.ptr] = subcontroller_index
         self.steps_by_subcontroller[subcontroller_index].append(self.ptr)
         # N.B. the super call must come after the subcontroller logic because the super call will increment the ptr
-        super().store(observation, action, reward, next_observation, terminated)
+        super().store(observation, action, reward, next_observation, done)
 
     def sample_q_batch(self, batch_size = 32):
         return super().sample_batch(batch_size = batch_size)

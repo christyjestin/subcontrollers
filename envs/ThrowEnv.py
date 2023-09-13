@@ -25,6 +25,7 @@ class ThrowEnv(BaseArmEnv):
         super().__init__(reward_weight = 40, render_mode = render_mode)
         self.hide('launch_point')
         self.released = False
+        self.just_released = False
 
     def handle_fist(self, close_fist):
         if self.released: # no action is possible if you've already let go of the ball
@@ -32,6 +33,7 @@ class ThrowEnv(BaseArmEnv):
         if not close_fist: # letting go off the ball
             self.ball_in_hand = False
             self.released = True
+            self.just_released = True
             self.closed_fist = False
 
     # terminate at the point after the release where the ball is closest to the target
@@ -56,12 +58,21 @@ class ThrowEnv(BaseArmEnv):
         self.closed_fist = True
         self.ball_in_hand = True
         self.released = False
+        self.just_released = False
+        self.t = 0
         self.handle_fist_appearance()
         self.previous_obs = None
         return self._get_obs()
 
     # reward is only received at the perigee (i.e. right before the episode terminates)
+    # N.B. there are definitely some edge cases where these conditions overlap: these cases
+    # are ignored for simplicity ebcause they should be sufficiently rare
     def reward(self, changed_fist):
+        if self.t == self.MAX_EPISODE_LENGTH:
+            return -10 # big penalty to disincentivize holding onto the ball
+        if self.just_released:
+            self.just_released = False
+            return np.linalg.norm(self.ball_vel) / 10 # smoother reward to incentivize actually throwing the ball instead of dropping it
         if self.released and self.at_perigee:
             if self.ball_vel[0] < 0:
                 return -0.8 + self.ball_vel[0] # punishment for throwing in the wrong direction

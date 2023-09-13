@@ -31,10 +31,11 @@ def main(env_type, model_path, hidden_sizes, deterministic):
     observation, _ = env.reset()
     for _ in range(1000):
         action = model.action(torch.as_tensor(as_vector(observation), dtype = torch.float32), deterministic)
-        observation, net_reward, terminated, _, _ = env.step(action)
+        observation, net_reward, terminated, truncated, _ = env.step(action)
+        done = terminated or truncated
         total_reward += net_reward
         episode_length += 1
-        if terminated:
+        if done:
             print(f"The total reward for this episode is {total_reward}, and the episode length is {episode_length}")
             for _ in range(5):
                 env.passive_step()

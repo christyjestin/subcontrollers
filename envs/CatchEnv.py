@@ -58,6 +58,7 @@ class CatchEnv(BaseArmEnv):
 
         self.closed_fist = False
         self.ball_in_hand = False
+        self.t = 0
         self.handle_fist_appearance()
         self.previous_obs = None
         return self._get_obs()

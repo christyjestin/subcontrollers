@@ -72,6 +72,7 @@ class BaseArmEnv(MujocoEnv):
     '''
 
     metadata = {'render_modes': ["human", "rgb_array", "depth_array"], 'render_fps': 25}
+    MAX_EPISODE_LENGTH = 100
 
     def __init__(self, frame_skip: int = 20, reward_weight: float = 10, render_mode = None):
         MujocoEnv.__init__(self, XML_FILE, frame_skip, observation_space = None, render_mode = render_mode, 
@@ -103,6 +104,8 @@ class BaseArmEnv(MujocoEnv):
         self.ball_radius = self.model.geom('ball_geom').size[0]
 
         self.previous_obs = None
+
+        self.t = 0
 
     def _get_obs(self):
         continuous_obs = np.concatenate((self.data.qpos, self.data.qvel, self.launch_point_pos, self.target_pos))
@@ -317,6 +320,7 @@ class BaseArmEnv(MujocoEnv):
     def step(self, action):
         bools = [self.ball_in_hand, self.closed_fist]
         assert None not in bools, f"Uninitialized variable: ball_in_hand, closed_fist = {bools}"
+        self.t += 1
         control, close_fist = action
         changed_fist = (self.closed_fist != close_fist)
         self.do_simulation(control, self.frame_skip)
@@ -328,7 +332,7 @@ class BaseArmEnv(MujocoEnv):
         ctrl_cost, changed_fist_cost, total_cost = self.control_cost(control, changed_fist)
         net_reward = rewards - total_cost
         terminated = self.should_terminate() or self.invalid_position() or self.stuck(observation)
-        truncated = False
+        truncated = (self.t == self.MAX_EPISODE_LENGTH)
         info = {'rewards': rewards, 'control': ctrl_cost, 'changing_fist': changed_fist_cost, 'total_cost': total_cost}
 
         if self.render_mode == "human":
