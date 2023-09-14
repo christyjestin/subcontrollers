@@ -83,7 +83,7 @@ class ThrowEnv(BaseArmEnv):
             good_vel = np.clip(self.ball_vel, 0, np.inf)
             # cap velocity reward because there's diminishing returns, and this is an auxiliary reward
             # to help the arm find the true, primary reward (which is based on distance to target)
-            return np.max(np.linalg.norm(good_vel), MAX_VEL) / 30
+            return np.clip(np.linalg.norm(good_vel), 0, MAX_VEL) / 30
         # COMPONENT 3: primary reward that is based on the closest the ball gets to the target
         if self.released and self.at_perigee:
             return (0.001 / (self.ball_to_target_distance ** 2))
