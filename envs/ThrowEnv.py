@@ -68,16 +68,26 @@ class ThrowEnv(BaseArmEnv):
     # N.B. there are definitely some edge cases where these conditions overlap: these cases
     # are ignored for simplicity ebcause they should be sufficiently rare
     def reward(self, changed_fist):
+        # COMPONENT 1: big penalty to disincentivize holding onto the ball
         if self.t == self.MAX_EPISODE_LENGTH:
-            return -10 # big penalty to disincentivize holding onto the ball
+            return -10
+        # COMPONENT 2: smaller, auxiliary reward for throws that "have the right idea" even if they're way off target
         if self.just_released:
             self.just_released = False
-            return np.linalg.norm(self.ball_vel) / 10 # smoother reward to incentivize actually throwing the ball instead of dropping it
+            # max velocity is chosen based on the velocity of a quick pass (t = 0.3 seconds) to a hypothetical
+            # target at the rightmost edge of the plane at the same level as the release point
+            # t = 2v_z / g -> v_z = 0.5gt; t = d / v_x -> v_x = d / t
+            t = 0.3
+            MAX_VEL = np.linalg.norm(np.array([0.5 * 10 * t, 0, 1. / t]))
+            # reward throws that point up and/or to the right (this is typically the right direction)
+            good_vel = np.clip(self.ball_vel, 0, np.inf)
+            # cap velocity reward because there's diminishing returns, and this is an auxiliary reward
+            # to help the arm find the true, primary reward (which is based on distance to target)
+            return np.max(np.linalg.norm(good_vel), MAX_VEL) / 30
+        # COMPONENT 3: primary reward that is based on the closest the ball gets to the target
         if self.released and self.at_perigee:
-            if self.ball_vel[0] < 0:
-                return -0.8 + self.ball_vel[0] # punishment for throwing in the wrong direction
             return (0.001 / (self.ball_to_target_distance ** 2))
-        # punishment to get the arm to actually do something and not just end the episode because it hit the floor
-        if self.invalid_position():
-            return -1 if self.released else -2
-        return 0
+        # COMPONENT 4: smaller penalty to prevent the robot from just ending the episode by hitting the floor
+        if self.invalid_position() and not self.released:
+            return -2
+        return 0 # default is no reward

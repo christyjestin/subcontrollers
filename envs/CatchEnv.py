@@ -20,13 +20,13 @@ class CatchEnv(BaseArmEnv):
 
     # because of the large bonus, all successful catches are more or less equal
     # but we still want to use distance in the reward function to make the reward landscape dense
-    BALL_IN_HAND_BONUS = 300
+    BALL_IN_HAND_BONUS = 500
 
     def __init__(self, render_mode = None):
         # lower reward weight to disincentivize model from exploiting dense rewards: the model could try
         # to exploit the system by frequently making futile catch attempts that still get small distance rewards
         # hopefully the smaller reward_weight prevents this exploit
-        super().__init__(reward_weight = 0.3, render_mode = render_mode)
+        super().__init__(reward_weight = 0.5, render_mode = render_mode)
         self.hide('target') # target is irrelevant for the catching task
 
     # custom sample function that makes the robot less likely to try to grab the ball
