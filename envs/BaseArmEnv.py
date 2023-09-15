@@ -100,7 +100,7 @@ class BaseArmEnv(MujocoEnv):
 
         self._launch_point_pos = self.model.body('launch_point').pos
         self._target_pos = self.model.body('target').pos
-        self.storage_point = np.array([1.2, 0., 0.])
+        self._storage_point = np.array([1.2, 0., 0.])
         self.ball_radius = self.model.geom('ball_geom').size[0]
 
         self.previous_obs = None
@@ -312,10 +312,16 @@ class BaseArmEnv(MujocoEnv):
         v0 = v_avg + 0.5 * g * t # v_avg = v0 - 0.5 * g * t -> v0 = v_avg + 0.5 * g * t
         return delta_x / t, v0
 
+    # hides either the target or launch point geometries
     def hide(self, body_name):
         assert body_name in ['target', 'launch_point']
-        self.model.body(body_name).pos = self.storage_point
+        self.model.body(body_name).pos = self._storage_point
         self.model.geom(f"{body_name}_geom").rgba = INVISIBLE
+
+    def scaled_reward(self, changed_fist, ball_was_within_reach):
+        is_catch_env = (self.__class__.__name__ == 'CatchEnv')
+        raw_reward = self.reward(changed_fist, ball_was_within_reach) if is_catch_env else self.reward()
+        return self._reward_weight * raw_reward
 
     def step(self, action):
         bools = [self.ball_in_hand, self.closed_fist]
@@ -323,12 +329,13 @@ class BaseArmEnv(MujocoEnv):
         self.t += 1
         control, close_fist = action
         changed_fist = (self.closed_fist != close_fist)
+        ball_was_within_reach = self.ball_within_reach # only useful for CatchEnv
         self.do_simulation(control, self.frame_skip)
 
         self.handle_fist(close_fist)
         self.handle_fist_appearance()
         observation = self._get_obs()
-        rewards = self._reward_weight * self.reward(changed_fist)
+        rewards = self.scaled_reward(changed_fist, ball_was_within_reach)
         ctrl_cost, changed_fist_cost, total_cost = self.control_cost(control, changed_fist)
         net_reward = rewards - total_cost
         terminated = self.should_terminate() or self.invalid_position() or self.stuck(observation)

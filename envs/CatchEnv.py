@@ -18,10 +18,6 @@ class CatchEnv(BaseArmEnv):
     The task terminates when the ball is caught or when it becomes unviable i.e. hits the ground or goes out of bounds.
     '''
 
-    # because of the large bonus, all successful catches are more or less equal
-    # but we still want to use distance in the reward function to make the reward landscape dense
-    BALL_IN_HAND_BONUS = 500
-
     def __init__(self, render_mode = None):
         # lower reward weight to disincentivize model from exploiting dense rewards: the model could try
         # to exploit the system by frequently making futile catch attempts that still get small distance rewards
@@ -64,6 +60,17 @@ class CatchEnv(BaseArmEnv):
         return self._get_obs()
 
     # reward grasp attempts that are closer to the ball
-    def reward(self, changed_fist):
-        bonus = self.BALL_IN_HAND_BONUS * self.ball_in_hand
-        return (bonus + (1 / self.ball_to_fist_distance)) if changed_fist else 0
+    def reward(self, changed_fist, ball_was_within_reach):
+        BALL_IN_HAND_REWARD = 500
+        MISSED_OPPORTUNITY_PENALTY = -100
+        # COMPONENT 1: primary sparse reward for successful catches
+        if self.ball_in_hand:
+            return BALL_IN_HAND_REWARD
+        # COMPONENT 2: auxiliary dense reward to encourage fist actions that are closer to the ball
+        # N.B. this reward is given even when the robot is opening its hand since it must open before it can grasp
+        if changed_fist:
+            return 1 / self.ball_to_fist_distance
+        # COMPONENT 3: penalty for doing nothing when a catch was viable
+        if not self.closed_fist and ball_was_within_reach:
+            return MISSED_OPPORTUNITY_PENALTY
+        return 0

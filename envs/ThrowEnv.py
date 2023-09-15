@@ -65,9 +65,7 @@ class ThrowEnv(BaseArmEnv):
         return self._get_obs()
 
     # reward is only received at the perigee (i.e. right before the episode terminates)
-    # N.B. there are definitely some edge cases where these conditions overlap: these cases
-    # are ignored for simplicity ebcause they should be sufficiently rare
-    def reward(self, changed_fist):
+    def reward(self):
         # COMPONENT 1: primary reward that is based on the closest the ball gets to the target i.e. how far it is at the perigee
         if self.released and (self.at_perigee or self.invalid_position()):
             threshold = 0.125
@@ -89,11 +87,8 @@ class ThrowEnv(BaseArmEnv):
             up_and_right = (self.ball_vel[0] > 0) and (self.ball_vel[2] > 0)
             # cap velocity reward because there's diminishing returns, and this is an auxiliary reward
             # to help the arm find the true, primary reward (which is based on distance to target)
-            return np.clip(np.linalg.norm(self.ball_vel), 0, MAX_VEL) / 30 if up_and_right else 0
-        # COMPONENT 3: smaller penalty to prevent the robot from just ending the episode by hitting the floor
-        if self.invalid_position() and not self.released:
-            return -2
-        # COMPONENT 4: big penalty to disincentivize holding onto the ball
-        if self.t == self.MAX_EPISODE_LENGTH:
-            return -10
+            return 10 * np.clip(np.linalg.norm(self.ball_vel), 0, MAX_VEL) if up_and_right else 0
+        # COMPONENT 3: penalty to prevent the robot from ending the episode by just hitting the floor or holding onto the ball
+        if (self.invalid_position() and not self.released) or self.t == self.MAX_EPISODE_LENGTH:
+            return -8000
         return 0 # default is no reward
