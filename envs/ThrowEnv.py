@@ -22,7 +22,7 @@ class ThrowEnv(BaseArmEnv):
     '''
 
     def __init__(self, render_mode = None):
-        super().__init__(reward_weight = 40, render_mode = render_mode)
+        super().__init__(reward_weight = 1, render_mode = render_mode)
         self.hide('launch_point')
         self.released = False
         self.just_released = False
@@ -68,9 +68,15 @@ class ThrowEnv(BaseArmEnv):
     # N.B. there are definitely some edge cases where these conditions overlap: these cases
     # are ignored for simplicity ebcause they should be sufficiently rare
     def reward(self, changed_fist):
-        # COMPONENT 1: big penalty to disincentivize holding onto the ball
-        if self.t == self.MAX_EPISODE_LENGTH:
-            return -10
+        # COMPONENT 1: primary reward that is based on the closest the ball gets to the target i.e. how far it is at the perigee
+        if self.released and (self.at_perigee or self.invalid_position()):
+            threshold = 0.125
+            # more intuitive scale where the ball is closer than the threshold iff the distance is less than 1
+            scaled_distance = self.ball_to_target_distance / threshold
+            inverse_scaled_distance = 1 / scaled_distance
+            # piecewise function that rewards throws that are close but is also very harsh on throws that are way off
+            val = 20 * 2 ** (inverse_scaled_distance ** 1.6 - 1) if (scaled_distance < 1) else -10 * (scaled_distance ** 2.5)
+            return np.clip(val, -4000, 4000) # clip to avoid precision or backprop issues
         # COMPONENT 2: smaller, auxiliary reward for throws that "have the right idea" even if they're way off target
         if self.just_released:
             self.just_released = False
@@ -79,15 +85,15 @@ class ThrowEnv(BaseArmEnv):
             # t = 2v_z / g -> v_z = 0.5gt; t = d / v_x -> v_x = d / t
             t = 0.3
             MAX_VEL = np.linalg.norm(np.array([0.5 * 10 * t, 0, 1. / t]))
-            # reward throws that point up and/or to the right (this is typically the right direction)
-            good_vel = np.clip(self.ball_vel, 0, np.inf)
+            # only reward throws that point up and to the right (this is typically the right direction)
+            up_and_right = (self.ball_vel[0] > 0) and (self.ball_vel[2] > 0)
             # cap velocity reward because there's diminishing returns, and this is an auxiliary reward
             # to help the arm find the true, primary reward (which is based on distance to target)
-            return np.clip(np.linalg.norm(good_vel), 0, MAX_VEL) / 30
-        # COMPONENT 3: primary reward that is based on the closest the ball gets to the target
-        if self.released and self.at_perigee:
-            return (0.001 / (self.ball_to_target_distance ** 2))
-        # COMPONENT 4: smaller penalty to prevent the robot from just ending the episode by hitting the floor
+            return np.clip(np.linalg.norm(self.ball_vel), 0, MAX_VEL) / 30 if up_and_right else 0
+        # COMPONENT 3: smaller penalty to prevent the robot from just ending the episode by hitting the floor
         if self.invalid_position() and not self.released:
             return -2
+        # COMPONENT 4: big penalty to disincentivize holding onto the ball
+        if self.t == self.MAX_EPISODE_LENGTH:
+            return -10
         return 0 # default is no reward

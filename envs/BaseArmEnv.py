@@ -296,8 +296,8 @@ class BaseArmEnv(MujocoEnv):
     # choose a candidate position for the arm to make a catch i.e. a position within range for the arm
     # this position will be used to compute the launch velocity to ensure that the pass is catchable
     def catch_candidate_pos_random_init(self):
-        r = np.random.uniform(0.12, 0.25)
-        th = np.random.uniform(np.pi / 12, np.pi * 11 / 12) # theta is between 15 and 165 degrees
+        r = np.random.uniform(0.175, 0.25)
+        th = np.random.uniform(np.pi / 6, np.pi * 5 / 6) # theta is between 30 and 150 degrees
         return r * np.array([np.cos(th), 0., np.sin(th)])
 
     # compute an initial velocity such that the ball will go from launch_pos to catch_candidate_pos
