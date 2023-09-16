@@ -22,7 +22,7 @@ class CatchEnv(BaseArmEnv):
         # lower reward weight to disincentivize model from exploiting dense rewards: the model could try
         # to exploit the system by frequently making futile catch attempts that still get small distance rewards
         # hopefully the smaller reward_weight prevents this exploit
-        super().__init__(reward_weight = 0.5, render_mode = render_mode)
+        super().__init__(render_mode = render_mode)
         self.hide('target') # target is irrelevant for the catching task
 
     # custom sample function that makes the robot less likely to try to grab the ball
@@ -61,7 +61,7 @@ class CatchEnv(BaseArmEnv):
 
     # reward grasp attempts that are closer to the ball
     def reward(self, changed_fist, ball_was_within_reach):
-        BALL_IN_HAND_REWARD = 500
+        BALL_IN_HAND_REWARD = 2000
         MISSED_OPPORTUNITY_PENALTY = -100
         # COMPONENT 1: primary sparse reward for successful catches
         if self.ball_in_hand:
@@ -69,7 +69,7 @@ class CatchEnv(BaseArmEnv):
         # COMPONENT 2: auxiliary dense reward to encourage fist actions that are closer to the ball
         # N.B. this reward is given even when the robot is opening its hand since it must open before it can grasp
         if changed_fist:
-            return 1 / self.ball_to_fist_distance
+            return np.clip((0.25 / self.ball_to_fist_distance) ** 4, 0, 1000)
         # COMPONENT 3: penalty for doing nothing when a catch was viable
         if not self.closed_fist and ball_was_within_reach:
             return MISSED_OPPORTUNITY_PENALTY
