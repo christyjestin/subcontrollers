@@ -102,6 +102,7 @@ class BaseArmEnv(MujocoEnv):
         self._target_pos = self.model.body('target').pos
         self._storage_point = np.array([1.2, 0., 0.])
         self.ball_radius = self.model.geom('ball_geom').size[0]
+        self.target_radius = self.model.geom('target_geom').size[0]
 
         self.previous_obs = None
         self.t = 0
@@ -178,11 +179,20 @@ class BaseArmEnv(MujocoEnv):
     def ball_in_hand(self):
         return self._ball_in_hand
 
+    # this setter also activates or deactivates the weld constraint that places the ball in the hand
     @ball_in_hand.setter
     def ball_in_hand(self, val):
         assert isinstance(val, bool)
         self._ball_in_hand = val
-        self.model.eq_active[0] = self._ball_in_hand # activate weld constraint that places the ball in the hand
+        self.model.eq_active[BALL_IN_HAND_CONSTRAINT] = self._ball_in_hand
+
+    # the ball "gets caught" i.e. stuck if it is entirely contained within the target
+    def check_ball_in_target(self):
+        # activate weld constraint that places the ball in the target
+        if self.ball_to_target_distance <= (self.target_radius - self.ball_radius):
+            self.model.eq_active[BALL_IN_TARGET_CONSTRAINT] = True
+            self.model.geom('target_geom').rgba[ALPHA_CHANNEL] = TRANSPARENT_ALPHA
+            print('The ball is in the target')
 
     @property # getter and setter to ensure the side effect of repositioning the target
     def target_pos(self):
@@ -322,17 +332,23 @@ class BaseArmEnv(MujocoEnv):
         raw_reward = self.reward(changed_fist, ball_was_within_reach) if is_catch_env else self.reward()
         return self._reward_weight * raw_reward
 
+    # does nothing by default but can be optionally customized by each subclass environment
+    def run_custom_step_logic(self):
+        pass
+
     def step(self, action):
         bools = [self.ball_in_hand, self.closed_fist]
         assert None not in bools, f"Uninitialized variable: ball_in_hand, closed_fist = {bools}"
         self.t += 1
         control, close_fist = action
         changed_fist = (self.closed_fist != close_fist)
-        ball_was_within_reach = self.ball_within_reach # only useful for CatchEnv
+        # only useful for CatchEnv: note that this is intentionally checked before stepping the simulation
+        ball_was_within_reach = self.ball_within_reach
         self.do_simulation(control, self.frame_skip)
 
         self.handle_fist(close_fist)
         self.handle_fist_appearance()
+        self.run_custom_step_logic()
         observation = self._get_obs()
         rewards = self.scaled_reward(changed_fist, ball_was_within_reach)
         ctrl_cost, changed_fist_cost, total_cost = self.control_cost(control, changed_fist)

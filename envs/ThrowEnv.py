@@ -46,6 +46,9 @@ class ThrowEnv(BaseArmEnv):
         discrete = bool(np.random.rand() < 0.9) # close fist with prob 0.9
         return (continuous, discrete)
 
+    def run_custom_step_logic(self):
+        self.check_ball_in_target()
+
     def reset_model(self):
         elbow_angle, shoulder_angle, fist_pos = self.arm_random_init()
         ball_pos = fist_pos # ball starts in hand

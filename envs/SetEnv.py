@@ -34,6 +34,9 @@ class SetEnv(BaseArmEnv):
             # the ball has been set once the fist is no longer in contact
             self.set = not self.ball_and_fist_colliding
 
+    def run_custom_step_logic(self):
+        self.check_ball_in_target()
+
     # terminate immediately on catch since grabbing is illegal in SetEnv
     # otherwise terminate at the point after the set where the ball is closest to the target
     def should_terminate(self):
