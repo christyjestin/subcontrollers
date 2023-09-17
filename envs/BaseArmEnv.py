@@ -192,7 +192,6 @@ class BaseArmEnv(MujocoEnv):
         if self.ball_to_target_distance <= (self.target_radius - self.ball_radius):
             self.model.eq_active[BALL_IN_TARGET_CONSTRAINT] = True
             self.model.geom('target_geom').rgba[ALPHA_CHANNEL] = TRANSPARENT_ALPHA
-            print('The ball is in the target')
 
     @property # getter and setter to ensure the side effect of repositioning the target
     def target_pos(self):
