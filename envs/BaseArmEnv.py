@@ -186,12 +186,22 @@ class BaseArmEnv(MujocoEnv):
         self._ball_in_hand = val
         self.model.eq_active[BALL_IN_HAND_CONSTRAINT] = self._ball_in_hand
 
+    @property
+    def ball_in_target(self):
+        return self.ball_to_target_distance <= (self.target_radius - self.ball_radius)
+
     # the ball "gets caught" i.e. stuck if it is entirely contained within the target
     def check_ball_in_target(self):
-        # activate weld constraint that places the ball in the target
-        if self.ball_to_target_distance <= (self.target_radius - self.ball_radius):
+        if self.ball_in_target:
+            # activate weld constraint that places the ball at the center of the target; also show the ball inside
+            # N.B. these changes are purely cosmetic in the sense that the episode has already ended, but this will
+            # make the visualization a lot more intuitive during the extra passive steps
             self.model.eq_active[BALL_IN_TARGET_CONSTRAINT] = True
             self.model.geom('target_geom').rgba[ALPHA_CHANNEL] = TRANSPARENT_ALPHA
+
+    def reset_ball_in_target(self): # undoes above changes in `check_ball_in_target`
+        self.model.eq_active[BALL_IN_TARGET_CONSTRAINT] = False
+        self.model.geom('target_geom').rgba[ALPHA_CHANNEL] = SEMI_TRANSPARENT_ALPHA
 
     @property # getter and setter to ensure the side effect of repositioning the target
     def target_pos(self):

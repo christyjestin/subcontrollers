@@ -5,6 +5,7 @@ TRANSPARENT_PURPLE = np.array([1, 0, 1, 0.25])
 INVISIBLE = np.zeros(4)
 ALPHA_CHANNEL = 3
 TRANSPARENT_ALPHA = 0.25
+SEMI_TRANSPARENT_ALPHA = 0.5
 
 CLOSED_FIST_RADIUS = 0.02 # empty closed fist
 BALL_IN_HAND_RADIUS = 0.03 # closed fist with ball in hand

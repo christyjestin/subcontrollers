@@ -38,7 +38,7 @@ class ThrowEnv(BaseArmEnv):
 
     # terminate at the point after the release where the ball is closest to the target
     def should_terminate(self):
-        return self.released and self.at_perigee
+        return (self.released and self.at_perigee) or self.ball_in_target
 
     # custom sample function that makes the robot much more likely to hold onto the ball
     def sample_random_action(self):
@@ -50,6 +50,7 @@ class ThrowEnv(BaseArmEnv):
         self.check_ball_in_target()
 
     def reset_model(self):
+        self.reset_ball_in_target()
         elbow_angle, shoulder_angle, fist_pos = self.arm_random_init()
         ball_pos = fist_pos # ball starts in hand
         self.target_pos = self.target_random_init()
@@ -69,6 +70,9 @@ class ThrowEnv(BaseArmEnv):
 
     # reward is only received at the perigee (i.e. right before the episode terminates)
     def reward(self):
+        # COMPONENT 0: max reward override to avoid issues with edge case where ball gets inside the target before it reaches perigee
+        if self.ball_in_target:
+            return 20000
         # COMPONENT 1: primary reward that is based on the closest the ball gets to the target i.e. how far it is at the perigee
         # we use a piecewise function that rewards throws that are close but is also very harsh on throws that are way off
         if self.released and (self.at_perigee or self.invalid_position()):

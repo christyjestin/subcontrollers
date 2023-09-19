@@ -43,6 +43,7 @@ class SetEnv(BaseArmEnv):
         return self.ball_in_hand or (self.set and self.at_perigee)
 
     def reset_model(self):
+        self.reset_ball_in_target()
         elbow_angle, shoulder_angle, _ = self.arm_random_init()
         self.target_pos = self.target_random_init()
         self.launch_point_pos = self.launch_random_init()
@@ -64,5 +65,6 @@ class SetEnv(BaseArmEnv):
         return self._get_obs()
 
     # reward is only received at the perigee (i.e. right before the episode terminates)
+    # TODO: revamp SetEnv in general
     def reward(self):
         return (1 / self.ball_to_target_distance) if (self.set and self.at_perigee) else 0
