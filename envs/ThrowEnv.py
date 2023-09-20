@@ -88,8 +88,8 @@ class ThrowEnv(BaseArmEnv):
             if scaled_distance < 1: # reward
                 val = 10 * inverse_scaled_distance ** (a - b * inverse_scaled_distance)
             else: # punishment
-                val = -10 * scaled_distance ** (c - d * scaled_distance)
-            return np.clip(val, -4000, 20000) # clip to avoid precision or backprop issues
+                val = -1 * scaled_distance ** (c - d * scaled_distance)
+            return np.clip(val, -400, 20000) # clip to avoid precision or backprop issues
         # COMPONENT 2: smaller, auxiliary reward for throws that "have the right idea" even if they're way off target
         if self.just_released:
             self.just_released = False
@@ -102,7 +102,7 @@ class ThrowEnv(BaseArmEnv):
             up_and_right = (self.ball_vel[0] > 0) and (self.ball_vel[2] > 0)
             # cap velocity reward because there's diminishing returns, and this is an auxiliary reward
             # to help the arm find the true, primary reward (which is based on distance to target)
-            return 20 * np.clip(np.linalg.norm(self.ball_vel), 0, MAX_VEL) if up_and_right else 0
+            return 40 * np.clip(np.linalg.norm(self.ball_vel), 0, MAX_VEL) if up_and_right else 0
         # COMPONENT 3: penalty to prevent the robot from ending the episode by just hitting the floor or holding onto the ball
         if (self.invalid_position() and not self.released) or self.t == self.MAX_EPISODE_LENGTH:
             return -8000
