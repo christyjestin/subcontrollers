@@ -68,8 +68,12 @@ class ThrowEnv(BaseArmEnv):
         self.previous_obs = None
         return self._get_obs()
 
-    # reward is only received at the perigee (i.e. right before the episode terminates)
+    # wrapper function adds a small penalty to every timestep to discourage longer episodes
+    # hopefully this encourages more intuitive throws
     def reward(self):
+        return self.true_reward() - 8
+
+    def true_reward(self):
         # COMPONENT 0: max reward override to avoid issues with edge case where ball gets inside the target before it reaches perigee
         if self.ball_in_target:
             return 20000
