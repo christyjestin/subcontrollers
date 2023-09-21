@@ -71,7 +71,7 @@ class ThrowEnv(BaseArmEnv):
     # wrapper function adds a small penalty to every timestep to discourage longer episodes
     # hopefully this encourages more intuitive throws
     def reward(self):
-        return self.true_reward() - 8
+        return self.true_reward() - 4
 
     def true_reward(self):
         # COMPONENT 0: max reward override to avoid issues with edge case where ball gets inside the target before it reaches perigee
