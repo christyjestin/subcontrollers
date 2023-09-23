@@ -1,0 +1,7 @@
+name: sub
+channels:
+  - defaults
+variables:
+  MUJOCO_GL: egl
+  PYOPENGL_PLATFORM: egl
+prefix: /home/christy/anaconda3/envs/sub
