@@ -71,7 +71,7 @@ class ThrowEnv(BaseArmEnv):
     # wrapper function adds a small penalty to every timestep to discourage longer episodes
     # hopefully this encourages more intuitive throws
     def reward(self):
-        return self.true_reward() - 4
+        return self.true_reward() - 5 * self.t
 
     def true_reward(self):
         # COMPONENT 0: max reward override to avoid issues with edge case where ball gets inside the target before it reaches perigee
@@ -92,8 +92,8 @@ class ThrowEnv(BaseArmEnv):
             if scaled_distance < 1: # reward
                 val = 10 * inverse_scaled_distance ** (a - b * inverse_scaled_distance)
             else: # punishment
-                val = -1 * scaled_distance ** (c - d * scaled_distance)
-            return np.clip(val, -400, 20000) # clip to avoid precision or backprop issues
+                val = -5 * scaled_distance ** (c - d * scaled_distance)
+            return np.clip(val, -2000, 20000) # clip to avoid precision or backprop issues
         # COMPONENT 2: smaller, auxiliary reward for throws that "have the right idea" even if they're way off target
         if self.just_released:
             self.just_released = False

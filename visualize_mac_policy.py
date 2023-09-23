@@ -60,25 +60,27 @@ def main(task, num_subcontrollers, critic_dir, actor_dir, hidden_sizes, determin
     observation, _ = env.reset()
     rewards = []
     info_logs = []
+    subcontrollers = []
     for _ in range(1000):
         obs = torch.as_tensor(as_vector(observation), dtype = torch.float32)
         action, subcontroller_index = model.action(obs, env_index = 0, deterministic = deterministic)
-        env.model.geom('subcontroller_indicator_geom').rgba = cmap(subcontroller_index, num_subcontrollers)
         observation, net_reward, terminated, truncated, info = env.step(action)
         done = terminated or truncated
         rewards.append(net_reward)
         info_logs.append(info)
+        subcontrollers.append(subcontroller_index)
         total_reward += net_reward
         episode_length += 1
         if done:
             print(f"The total reward for this episode is {total_reward}, and the episode length is {episode_length}")
             for _ in range(5):
                 env.passive_step()
-            print(tabulate([[*info.values(), reward] for info, reward in zip(info_logs, rewards)], 
-                           headers = ['rewards', 'control', 'changing_fist', 'total_cost', 'net']))
+            print(tabulate([[*info.values(), reward, index] for info, reward, index in zip(info_logs, rewards, subcontrollers)], 
+                           headers = ['rewards', 'control', 'changing_fist', 'total_cost', 'net', 'subcontroller']))
             input("Press Enter to Continue")
             rewards = []
             info_logs = []
+            subcontrollers = []
             episode_length, total_reward = 0, 0
             observation, _ = env.reset()
     env.close()

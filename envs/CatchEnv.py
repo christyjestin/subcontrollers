@@ -19,9 +19,6 @@ class CatchEnv(BaseArmEnv):
     '''
 
     def __init__(self, render_mode = None):
-        # lower reward weight to disincentivize model from exploiting dense rewards: the model could try
-        # to exploit the system by frequently making futile catch attempts that still get small distance rewards
-        # hopefully the smaller reward_weight prevents this exploit
         super().__init__(render_mode = render_mode)
         self.hide('target') # target is irrelevant for the catching task
 

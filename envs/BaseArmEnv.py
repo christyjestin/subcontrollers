@@ -95,7 +95,7 @@ class BaseArmEnv(MujocoEnv):
         self._ball_in_hand = None
 
         self._ctrl_cost_weight = 1
-        self._change_fist_weight = 40
+        self._change_fist_weight = 80
         self._reward_weight = reward_weight
 
         self._launch_point_pos = self.model.body('launch_point').pos
