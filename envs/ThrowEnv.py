@@ -43,7 +43,7 @@ class ThrowEnv(BaseArmEnv):
     # custom sample function that makes the robot much more likely to hold onto the ball
     def sample_random_action(self):
         continuous, _ = self.action_space.sample()
-        discrete = bool(np.random.rand() < 0.9) # close fist with prob 0.9
+        discrete = bool(np.random.rand() < 0.8) # close fist with prob 0.8
         return (continuous, discrete)
 
     def run_custom_step_logic(self):
@@ -71,7 +71,7 @@ class ThrowEnv(BaseArmEnv):
     # wrapper function adds a small penalty to every timestep to discourage longer episodes
     # hopefully this encourages more intuitive throws
     def reward(self):
-        return self.true_reward() - 5 * self.t
+        return self.true_reward() - 8 * np.sqrt(self.t)
 
     def true_reward(self):
         # COMPONENT 0: max reward override to avoid issues with edge case where ball gets inside the target before it reaches perigee
@@ -88,12 +88,12 @@ class ThrowEnv(BaseArmEnv):
             # a small factor for b to reduce this power over time and slow down reward growth
             # x is the inverse scaled distance for rewards and scaled distance for punishments
             a, b = 8, 0.65
-            c, d = 4, 0.1 # punishment has higher peak values of x, so we adjust the parameters to fit the range
+            c, d = 5, 0.1 # punishment has higher peak values of x, so we adjust the parameters to fit the range
             if scaled_distance < 1: # reward
                 val = 10 * inverse_scaled_distance ** (a - b * inverse_scaled_distance)
             else: # punishment
-                val = -5 * scaled_distance ** (c - d * scaled_distance)
-            return np.clip(val, -2000, 20000) # clip to avoid precision or backprop issues
+                val = -10 * scaled_distance ** (c - d * scaled_distance)
+            return np.clip(val, -10000, 20000) # clip to avoid precision or backprop issues
         # COMPONENT 2: smaller, auxiliary reward for throws that "have the right idea" even if they're way off target
         if self.just_released:
             self.just_released = False
