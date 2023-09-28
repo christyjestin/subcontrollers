@@ -68,10 +68,10 @@ class ThrowEnv(BaseArmEnv):
         self.previous_obs = None
         return self._get_obs()
 
-    # wrapper function adds a small penalty to every timestep to discourage longer episodes
-    # hopefully this encourages more intuitive throws
+    # wrapper function that adds a small penalty to every timestep to discourage longer episodes
+    # hopefully this encourages more intuitive. single motion throws
     def reward(self):
-        return self.true_reward() - 20 * np.sqrt(self.t)
+        return self.true_reward() - 40 * self.t
 
     def true_reward(self):
         # COMPONENT 0: max reward override to avoid issues with edge case where ball gets inside the target before it reaches perigee
