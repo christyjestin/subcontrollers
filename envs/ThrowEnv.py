@@ -71,7 +71,7 @@ class ThrowEnv(BaseArmEnv):
     # wrapper function adds a small penalty to every timestep to discourage longer episodes
     # hopefully this encourages more intuitive throws
     def reward(self):
-        return self.true_reward() - 8 * np.sqrt(self.t)
+        return self.true_reward() - 20 * np.sqrt(self.t)
 
     def true_reward(self):
         # COMPONENT 0: max reward override to avoid issues with edge case where ball gets inside the target before it reaches perigee
@@ -106,8 +106,8 @@ class ThrowEnv(BaseArmEnv):
             up_and_right = (self.ball_vel[0] > 0) and (self.ball_vel[2] > 0)
             # cap velocity reward because there's diminishing returns, and this is an auxiliary reward
             # to help the arm find the true, primary reward (which is based on distance to target)
-            return 40 * np.clip(np.linalg.norm(self.ball_vel), 0, MAX_VEL) if up_and_right else 0
+            return 100 * np.clip(np.linalg.norm(self.ball_vel), 0, MAX_VEL) if up_and_right else 0
         # COMPONENT 3: penalty to prevent the robot from ending the episode by just hitting the floor or holding onto the ball
         if (self.invalid_position() and not self.released) or self.t == self.MAX_EPISODE_LENGTH:
-            return -8000
+            return -15000
         return 0 # default is no reward
