@@ -20,6 +20,7 @@ class ThrowEnv(BaseArmEnv):
     that it must refrain from grabbing. The reasoning behind this design choice is that the robot should learn to not
     regrab on its own because this action will have no effect on the state despite still having a control cost.
     '''
+    MAX_EPISODE_LENGTH = 20
 
     def __init__(self, render_mode = None):
         super().__init__(render_mode = render_mode)
@@ -68,12 +69,7 @@ class ThrowEnv(BaseArmEnv):
         self.previous_obs = None
         return self._get_obs()
 
-    # wrapper function that adds a small penalty to every timestep to discourage longer episodes
-    # hopefully this encourages more intuitive. single motion throws
     def reward(self):
-        return self.true_reward() - 20 * self.t
-
-    def true_reward(self):
         # COMPONENT 0: max reward override to avoid issues with edge case where ball gets inside the target before it reaches perigee
         if self.ball_in_target:
             return 20000
@@ -106,7 +102,7 @@ class ThrowEnv(BaseArmEnv):
             up_and_right = (self.ball_vel[0] > 0) and (self.ball_vel[2] > 0)
             # cap velocity reward because there's diminishing returns, and this is an auxiliary reward
             # to help the arm find the true, primary reward (which is based on distance to target)
-            return 100 * np.clip(np.linalg.norm(self.ball_vel), 0, MAX_VEL) if up_and_right else 0
+            return 30 * np.clip(np.linalg.norm(self.ball_vel), 0, MAX_VEL) if up_and_right else 0
         # COMPONENT 3: penalty to prevent the robot from ending the episode by just hitting the floor or holding onto the ball
         if (self.invalid_position() and not self.released) or self.t == self.MAX_EPISODE_LENGTH:
             return -15000
