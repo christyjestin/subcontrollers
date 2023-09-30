@@ -15,6 +15,7 @@ parser.add_argument('--no_wandb', dest = 'use_wandb', action = 'store_false', he
 parser.add_argument('--hidden_size', type = int, default = 256)
 parser.add_argument('--num_layers', type = int, default = 2)
 parser.add_argument('--gamma', type = float, default = 0.99)
+parser.add_argument('--alpha', type = float, default = 0.2)
 parser.add_argument('--seed', type = int, default = 0)
 parser.add_argument('--num_epochs', type = int, default = 50)
 
