@@ -70,6 +70,9 @@ class ThrowEnv(BaseArmEnv):
         return self._get_obs()
 
     def reward(self):
+        return self.true_reward() - 80
+
+    def true_reward(self):
         # COMPONENT 0: max reward override to avoid issues with edge case where ball gets inside the target before it reaches perigee
         if self.ball_in_target:
             return 20000
