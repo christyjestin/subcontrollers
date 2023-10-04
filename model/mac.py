@@ -6,11 +6,14 @@ from torch.optim import Adam
 from sklearn.decomposition import KernelPCA
 from sklearn.cluster import AgglomerativeClustering
 from sklearn.preprocessing import StandardScaler
+from scipy.optimize import linear_sum_assignment
 import os, time
 import wandb
 from tqdm import tqdm
 
 from model.core import *
+
+DROP_INDEX = 6 # 3 for launch position and 3 for target position
 
 NUM_KERNEL_PCA_COMPONENTS = 10 # size of latent dimension
 NUM_NEIGHBORS = 9 # k for kNN
@@ -277,12 +280,9 @@ class MAC:
         self.knn_points[env_index][idx] = transformed.flatten()
         return assignment
 
-    # See `assign_subcontroller` for context; this function initiates the process in 3 steps:
-    # 1. Fit a nonlinear transformation by running Kernel PCA on initial observations
+    # 1. Fit a nonlinear transformation by running Kernel PCA on initial observations for a single env
     # 2. Run a clustering algorithm to produce initial subcontroller assignments for observations
-    # 3. Save these assignments to use in the KNN classification scheme for later observations
-    # this function also returns a list containing the counts for each subcontroller
-    def start_assigning_subcontrollers(self, env_index):
+    def cluster_environment(self, env_index):
         # standardize and run kernel PCA to apply a nonlinear transformation to observations
         data = self.replay_buffers[env_index].observation_buffer[:self.update_after]
         scaled_data = self.standard_scalers[env_index].fit_transform(data)
@@ -292,11 +292,62 @@ class MAC:
         assignments = HAC.fit_predict(transformed_data)
         # store transformed data to run KNN in future timesteps
         self.knn_points[env_index][:self.update_after] = transformed_data
+        return assignments
+
+    def get_clusters(self, data, assignments):
+        return [data[assignments == i] for i in range(self.num_subcontrollers)]
+
+    # We want to pair clusters that are similar to each other. We'll do this by constructing a bipartite graph where
+    # set A is the clusters from one environment, and set B is the clusters from the other, and the weight of the edge
+    # between A_i and B_j is the variance of the dataset formed by merging clusters A_i and B_j. After forming the
+    # graph, we'll use the scipy.optimize library to find the minimum sum assignment.
+    # This function returns a map where the keys are the original assignments in environment B, and the values are the
+    # aligned assignments: note that this means that the map is a permutation/bijection.
+    def align_clusters(self, env_0_clusters, other_env_clusters):
+        variances = np.zeros((self.num_subcontrollers, self.num_subcontrollers))
+        for i in range(self.num_subcontrollers):
+            for j in range(self.num_subcontrollers):
+                merged_cluster = np.concatenate((env_0_clusters[i], other_env_clusters[j]))
+                variances[i, j] = np.sum(np.var(merged_cluster, axis = 0))
+        row_ind, col_ind = linear_sum_assignment(variances)
+        return dict(zip(col_ind, row_ind)) # keys are other cluster indices, and values are env 0 cluster indices
+
+    # See `assign_subcontroller` for context; this function initiates the process in 3 steps:
+    # 1. Cluster each environment individually
+    # 2. Align cluster assignments while keeping the clusters in env 0 fixed as a reference
+    # 3. Save these assignments to use in the KNN classification scheme for later observations
+    # This function also returns a list of lists where the (i, j)th element is the number of times
+    # subcontroller j was used in env i
+    def start_assigning_subcontrollers(self):
+        # cluster observations from each environment separately
+        assignments_by_environment = [self.cluster_environment(env_index) for env_index in range(self.num_envs)]
+
+        # compile and transform full data
+        full_data = np.concatenate([self.replay_buffers[env_index].observation_buffer[:self.update_after]
+                                     for env_index in range(self.num_envs)])
+        # drop target and launch positions because they aren't used in all environments
+        full_data = full_data[:, :-DROP_INDEX]
+        global_scaler = StandardScaler()
+        global_kernel_pca = KernelPCA(n_components = NUM_KERNEL_PCA_COMPONENTS, kernel = 'rbf', eigen_solver = 'arpack')
+        scaled_data = global_scaler.fit_transform(full_data)
+        transformed_data = global_kernel_pca.fit_transform(scaled_data)
+        data_by_environment = np.split(transformed_data, self.num_envs)
+
+        # map cluster assignments to align with env 0's clusters by running a bipartite matching algorithm
+        env_0_clusters = self.get_clusters(data_by_environment[0], assignments_by_environment[0])
+        for env_index in range(1, self.num_envs):
+            other_env_clusters = self.get_clusters(data_by_environment[env_index], assignments_by_environment[env_index])
+            cluster_map = self.align_clusters(env_0_clusters, other_env_clusters)
+            reassignment = np.array([cluster_map[val] for val in assignments_by_environment[env_index]])
+            assignments_by_environment[env_index] = reassignment
+
         # store assigned subcontrollers
-        self.replay_buffers[env_index].subcontroller_index_buffer[:self.update_after] = assignments
-        for i, v in enumerate(assignments):
-            self.replay_buffers[env_index].steps_by_subcontroller[v].append(i)
-        _, counts = np.unique(assignments, return_counts = True)
+        counts = []
+        for env_index, assignments in enumerate(assignments_by_environment):
+            self.replay_buffers[env_index].subcontroller_index_buffer[:self.update_after] = assignments
+            for i, v in enumerate(assignments):
+                self.replay_buffers[env_index].steps_by_subcontroller[v].append(i)
+            counts.append(np.unique(assignments, return_counts = True)[1])
         return counts
 
     # Saves a model as a WandB artifact; creates a local temp file in the process
@@ -355,9 +406,9 @@ class MAC:
                     observations[env_index], _ = env.reset()
                     episode_returns[env_index], episode_lengths[env_index] = 0, 0
 
-                # Fit clustering methods and retroactively assign subcontrollers
-                if t + 1 == self.update_after:
-                    train_subcontroller_counts[env_index] = self.start_assigning_subcontrollers(env_index)
+            # Fit clustering methods and retroactively assign subcontrollers
+            if t + 1 == self.update_after:
+                train_subcontroller_counts = self.start_assigning_subcontrollers()
 
             # Backprop (happens outside of the environment loop i.e. all environments backprop together)
             if t >= self.update_after and t % self.update_every == 0:

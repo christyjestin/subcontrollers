@@ -46,7 +46,7 @@ def main(task, num_subcontrollers, critic_dir, actor_dir, hidden_sizes, determin
     model.q2s[0].load_state_dict(torch.load(f'{critic_dir}/{q2_path}'))
     # load actors
     paths = os.listdir(actor_dir)
-    pi_paths = [find_file(paths, ['pi', str(i)]) for i in range(num_subcontrollers)]
+    pi_paths = [find_file(paths, ['pi', f'_{i}_']) for i in range(num_subcontrollers)]
     for i, pi_path in enumerate(pi_paths):
         model.pis[i].load_state_dict(torch.load(f'{actor_dir}/{pi_path}'))
     # put model in eval mode
