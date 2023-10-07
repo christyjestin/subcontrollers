@@ -87,7 +87,7 @@ class MAC:
 
     def __init__(self, env_fns, exp_name, num_subcontrollers, actor_critic = MultiActorCritic, ac_kwargs = dict(), 
                  seed = 0, steps_per_epoch = 4000, num_epochs = 100, replay_size = int(1e6), gamma = 0.99, 
-                 polyak = 0.995, lr = 1e-3, alpha = 0.2, batch_size = 100, start_steps = 10000, update_after = 1000, 
+                 polyak = 0.995, lr = 1e-3, alpha = 0.2, batch_size = 100, start_steps = 10000, update_after = 2500, 
                  update_every = 50, num_test_episodes = 10, save_freq = 1, use_wandb = False):
         self.num_envs = len(env_fns)
         self.num_subcontrollers = num_subcontrollers
