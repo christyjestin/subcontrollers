@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 from model.core import *
 
-DROP_INDEX = 6 # 3 for launch position and 3 for target position
+from envs.constants import *
 
 NUM_KERNEL_PCA_COMPONENTS = 10 # size of latent dimension
 NUM_NEIGHBORS = 9 # k for kNN
@@ -322,16 +322,10 @@ class MAC:
         # cluster observations from each environment separately
         assignments_by_environment = [self.cluster_environment(env_index) for env_index in range(self.num_envs)]
 
-        # compile and transform full data
-        full_data = np.concatenate([self.replay_buffers[env_index].observation_buffer[:self.update_after]
-                                     for env_index in range(self.num_envs)])
-        # drop target and launch positions because they aren't used in all environments
-        full_data = full_data[:, :-DROP_INDEX]
-        global_scaler = StandardScaler()
-        global_kernel_pca = KernelPCA(n_components = NUM_KERNEL_PCA_COMPONENTS, kernel = 'rbf', eigen_solver = 'arpack')
-        scaled_data = global_scaler.fit_transform(full_data)
-        transformed_data = global_kernel_pca.fit_transform(scaled_data)
-        data_by_environment = np.split(transformed_data, self.num_envs)
+        # only consider arm's position and velocity since everything else is inconsistent across environments
+        keep_indices = np.concatenate((np.arange(NUM_MOTORS), VELOCITY_START_INDEX + np.arange(NUM_MOTORS)))
+        data_by_environment = [self.replay_buffers[env_index].observation_buffer[:self.update_after, keep_indices]
+                                     for env_index in range(self.num_envs)]
 
         # map cluster assignments to align with env 0's clusters by running a bipartite matching algorithm
         env_0_clusters = self.get_clusters(data_by_environment[0], assignments_by_environment[0])

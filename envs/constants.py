@@ -22,6 +22,7 @@ IDENTITY_QUAT = np.array([1., 0., 0., 0.])
 g = 9.81
 
 NUM_MOTORS = 2
+VELOCITY_START_INDEX = 9
 Z_INDEX = 2
 
 PLANE_HALF_SIZE = 1.5
