@@ -95,17 +95,18 @@ class ThrowEnv(BaseArmEnv):
             return np.clip(val, -10000, 20000) # clip to avoid precision or backprop issues
         # COMPONENT 2: smaller, auxiliary reward for throws that "have the right idea" even if they're way off target
         if self.just_released:
+            VELOCITY_SCALE = np.array([1, 0, 2])
             self.just_released = False
             # max velocity is chosen based on the velocity of a quick pass (t = 0.3 seconds) to a hypothetical
             # target at the rightmost edge of the plane at the same level as the release point
             # t = 2v_z / g -> v_z = 0.5gt; t = d / v_x -> v_x = d / t
             t = 0.3
-            MAX_VEL = np.linalg.norm(np.array([0.5 * 10 * t, 0, 1. / t]))
+            MAX_VEL = np.linalg.norm(np.array([0.5 * 10 * t, 0, 1. / t]) * VELOCITY_SCALE)
             # only reward throws that point up and to the right (this is typically the right direction)
             up_and_right = (self.ball_vel[0] > 0) and (self.ball_vel[2] > 0)
             # cap velocity reward because there's diminishing returns, and this is an auxiliary reward
             # to help the arm find the true, primary reward (which is based on distance to target)
-            return 30 * np.clip(np.linalg.norm(self.ball_vel), 0, MAX_VEL) if up_and_right else 0
+            return 100 * np.clip(np.linalg.norm(self.ball_vel * VELOCITY_SCALE), 0, MAX_VEL) if up_and_right else 0
         # COMPONENT 3: penalty to prevent the robot from ending the episode by just hitting the floor or holding onto the ball
         if (self.invalid_position() and not self.released) or self.t == self.MAX_EPISODE_LENGTH:
             return -15000

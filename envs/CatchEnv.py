@@ -58,15 +58,15 @@ class CatchEnv(BaseArmEnv):
 
     # reward grasp attempts that are closer to the ball
     def reward(self, changed_fist, ball_was_within_reach):
-        BALL_IN_HAND_REWARD = 2000
-        MISSED_OPPORTUNITY_PENALTY = -100
+        BALL_IN_HAND_REWARD = 5000
+        MISSED_OPPORTUNITY_PENALTY = -500
         # COMPONENT 1: primary sparse reward for successful catches
         if self.ball_in_hand:
             return BALL_IN_HAND_REWARD
         # COMPONENT 2: auxiliary dense reward to encourage fist actions that are closer to the ball
         # N.B. this reward is given even when the robot is opening its hand since it must open before it can grasp
         if changed_fist:
-            return np.clip((0.25 / self.ball_to_fist_distance) ** 4, 0, 1000)
+            return np.clip((0.15 / self.ball_to_fist_distance) ** 6, 0, 1000)
         # COMPONENT 3: penalty for doing nothing when a catch was viable
         if not self.closed_fist and ball_was_within_reach:
             return MISSED_OPPORTUNITY_PENALTY
